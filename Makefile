@@ -22,7 +22,7 @@ LDLIBS =
 
 EXECUTABLE = run
 
-TEAM_ID = # put your 32chars team id here and you will be able to submit your program from command line using "make submit" 
+TEAM_ID = 30f641898926b29c74b73e3275bee3e3 # put your 32chars team id here and you will be able to submit your program from command line using "make submit" 
 
 SRCS=$(wildcard src/*.cpp)
 OBJS=$(SRCS:src/%.cpp=obj/%.o)
