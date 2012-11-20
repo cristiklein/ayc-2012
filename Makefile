@@ -38,7 +38,7 @@ obj/%.o: src/%.cpp
 
 zip: dist-clean
 ifdef TEAM_ID
-	zip $(strip $(TEAM_ID)).zip -r ./
+	zip $(strip $(TEAM_ID)).zip -r Makefile src
 else
 	@echo "you need to put your TEAM_ID in the Makefile"
 endif
@@ -51,8 +51,7 @@ else
 endif
 
 clean:
-	rm -f obj/*
-	rm run
+	rm -f obj/* run
 dist-clean: clean
 	rm -f $(EXECUTABLE) *~ .depend *.zip
 	
