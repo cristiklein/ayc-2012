@@ -62,7 +62,7 @@ depend: .depend
 	rm -f ./.depend
 	@$(foreach SRC, $(SRCS), $(COMPILER) $(FLAGS) -MT $(SRC:src/%.cpp=obj/%.o) -MM $(SRC) >> .depend;)
 
-test:
+test: release
 	rm -f scenarios/newinput/play_hard.txt
 	rm -f scenarios/newinput/work_hard.txt
 	scenarios/newinput/script.sh
