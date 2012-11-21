@@ -64,7 +64,6 @@ struct Travel{
 
 
 
-time_t convert_to_timestamp(int day, int month, int year, int hour, int minute, int seconde);
 time_t convert_string_to_timestamp(const string &s);
 void print_params(Parameters &parameters);
 void print_flight(Flight& flight);
@@ -327,23 +326,6 @@ void merge_path(vector<Travel>& travel1, vector<Travel>& travel2){
 }
 
 /**
- * \fn time_t convert_to_timestamp(int day, int month, int year, int hour, int minute, int seconde)
- * \brief Convert a date to timestamp
- * Parameter's names are self-sufficient. You shouldn't modify this part of the code unless you know what you are doing.
- * \return a timestamp (epoch) corresponding to the given parameters.
- */
-time_t convert_to_timestamp(int day, int month, int year, int hour, int minute, int seconde){
-	tm time;
-	time.tm_year = year - 1900;
-	time.tm_mon = month - 1;
-	time.tm_mday = day;
-	time.tm_hour = hour;
-	time.tm_min = minute;
-	time.tm_sec = seconde;
-	return timegm(&time);
-}
-
-/**
  * \fn time_t convert_string_to_timestamp(const string &s)
  * \brief Parses the string s and returns a timestamp (epoch)
  * \param s A string that represents a date with the following format MMDDYYYYhhmmss with
@@ -361,14 +343,15 @@ time_t convert_string_to_timestamp(const string &s){
 		cerr<<"The given string is not a valid timestamp"<<endl;
 		exit(0);
 	}else{
-		int day, month, year, hour, minute, seconde;
-		day = atoi(s.substr(2,2).c_str());
-		month = atoi(s.substr(0,2).c_str());
-		year = atoi(s.substr(4,4).c_str());
-		hour = atoi(s.substr(8,2).c_str());
-		minute = atoi(s.substr(10,2).c_str());
-		seconde = atoi(s.substr(12,2).c_str());
-		return convert_to_timestamp(day, month, year, hour, minute, seconde);
+		const char *c = s.c_str();
+		tm time;
+		time.tm_year = (c[4]-'0') * 1000 + (c[5]-'0') * 100 + (c[6]-'0') * 10 + (c[7]-'0') - 1900;
+		time.tm_mon  = (c[ 0]-'0') * 10 + c[ 1]-'0' - 1;
+		time.tm_mday = (c[ 2]-'0') * 10 + c[ 3]-'0';
+		time.tm_hour = (c[ 8]-'0') * 10 + c[ 9]-'0';
+		time.tm_min  = (c[10]-'0') * 10 + c[11]-'0';
+		time.tm_sec  = (c[12]-'0') * 10 + c[13]-'0';
+		return timegm(&time);
 	}
 }
 
