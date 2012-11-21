@@ -65,7 +65,7 @@ struct Travel{
 
 
 time_t convert_to_timestamp(int day, int month, int year, int hour, int minute, int seconde);
-time_t convert_string_to_timestamp(string s);
+time_t convert_string_to_timestamp(const string &s);
 void print_params(Parameters &parameters);
 void print_flight(Flight& flight);
 void read_parameters(Parameters& parameters, int argc, char **argv);
@@ -91,7 +91,6 @@ Travel work_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<
 vector<Travel> play_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<string> >& alliances);
 void output_play_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<string> >& alliances);
 void output_work_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<string> >& alliances);
-time_t timegm(struct tm *tm);
 
 /**
  * \fn Travel work_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<string> >& alliances)
@@ -345,28 +344,7 @@ time_t convert_to_timestamp(int day, int month, int year, int hour, int minute, 
 }
 
 /**
- * \fn time_t timegm(struct tm *tm)
- * \brief Convert a tm structure into a timestamp.
- * \return a timestamp (epoch) corresponding to the given parameter.
- */
-time_t timegm(struct tm *tm){
-       time_t ret;
-       char *tz;
-
-       tz = getenv("TZ");
-       setenv("TZ", "", 1);
-       tzset();
-       ret = mktime(tm);
-       if (tz)
-           setenv("TZ", tz, 1);
-       else
-           unsetenv("TZ");
-       tzset();
-       return ret;
-}
-
-/**
- * \fn time_t convert_string_to_timestamp(string s)
+ * \fn time_t convert_string_to_timestamp(const string &s)
  * \brief Parses the string s and returns a timestamp (epoch)
  * \param s A string that represents a date with the following format MMDDYYYYhhmmss with
  * M = Month number
@@ -378,7 +356,7 @@ time_t timegm(struct tm *tm){
  * You shouldn't modify this part of the code unless you know what you are doing.
  * \return a timestamp (epoch) corresponding to the given parameters.
  */
-time_t convert_string_to_timestamp(string s){
+time_t convert_string_to_timestamp(const string &s){
 	if(s.size() != 14){
 		cerr<<"The given string is not a valid timestamp"<<endl;
 		exit(0);
@@ -510,9 +488,9 @@ void parse_flight(vector<Flight>& flights, string& line){
 		Flight flight;
 		flight.id = splittedLine[0];
 		flight.from = splittedLine[1];
-		flight.take_off_time = convert_string_to_timestamp(splittedLine[2].c_str());
+		flight.take_off_time = convert_string_to_timestamp(splittedLine[2]);
 		flight.to = splittedLine[3];
-		flight.land_time = convert_string_to_timestamp(splittedLine[4].c_str());
+		flight.land_time = convert_string_to_timestamp(splittedLine[4]);
 		flight.cost = atof(splittedLine[5].c_str());
 		flight.company = splittedLine[6];
 		flights.push_back(flight);
