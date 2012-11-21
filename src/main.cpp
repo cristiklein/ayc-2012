@@ -233,7 +233,7 @@ void compute_path(vector<Flight>& flights, string to, vector<Travel>& travels, u
 			final_travels.push_back(travel);
 		}else{//otherwise, we need to compute a path
 			for(unsigned int i=0; i<flights.size(); i++){
-				Flight flight = flights[i];
+				const Flight &flight = flights[i];
 				if(flight.from == current_city.to &&
 						flight.take_off_time >= t_min &&
 						flight.land_time <= t_max &&
@@ -468,7 +468,8 @@ void parse_flight(vector<Flight>& flights, string& line){
 	vector<string> splittedLine;
 	split_string(splittedLine, line, ';');
 	if(splittedLine.size() == 7){
-		Flight flight;
+		flights.resize(flights.size() + 1);
+		Flight &flight = flights.back();
 		flight.id = splittedLine[0];
 		flight.from = splittedLine[1];
 		flight.take_off_time = convert_string_to_timestamp(splittedLine[2]);
@@ -476,7 +477,6 @@ void parse_flight(vector<Flight>& flights, string& line){
 		flight.land_time = convert_string_to_timestamp(splittedLine[4]);
 		flight.cost = atof(splittedLine[5].c_str());
 		flight.company = splittedLine[6];
-		flights.push_back(flight);
 	}
 }
 
