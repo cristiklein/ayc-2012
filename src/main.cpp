@@ -109,7 +109,7 @@ void apply_discount(Travel & travel, const Alliances&alliances);
 float compute_cost(Travel & travel, const Alliances&alliances);
 void print_alliances(const Alliances &alliances);
 void print_flights(const vector<Flight>& flights, ofstream& output);
-bool nerver_traveled_to(Travel travel, Id city);
+bool never_traveled_to(Travel travel, Id city);
 void print_travel(Travel& travel, const Alliances&alliances);
 void compute_path(vector<Flight>& flights, Id to, vector<Travel>& travels, unsigned long t_min, unsigned long t_max, Parameters parameters);
 Travel find_cheapest(vector<Travel>& travels, const Alliances&alliances);
@@ -268,7 +268,7 @@ void compute_path(vector<Flight>& flights, Id to, vector<Travel>& travels, unsig
 						flight.land_time <= t_max &&
 						(flight.take_off_time > current_city.land_time) &&
 						flight.take_off_time - current_city.land_time <= parameters.max_layover_time &&
-						nerver_traveled_to(travel, flight.to)){
+						never_traveled_to(travel, flight.to)){
 					Travel newTravel = travel;
 					newTravel.flights.push_back(flight);
 					if(flight.to == to){
@@ -627,13 +627,13 @@ void print_flights(vector<Flight>& flights, ofstream& output){
 }
 
 /**
- * \fn bool nerver_traveled_to(Travel travel, Id city)
+ * \fn bool never_traveled_to(Travel travel, Id city)
  * \brief Indicates if the city has already been visited in the travel. This function is used to avoid stupid loops.
  * \param travel The travels.
  * \apram city The city.
  * \return The current travel has never visited the given city.
  */
-bool nerver_traveled_to(Travel travel, Id city){
+bool never_traveled_to(Travel travel, Id city){
 	for(unsigned int i=0; i<travel.flights.size(); i++)
 		if(travel.flights[i].from == city || travel.flights[i].to == city)
 			return false;
