@@ -29,14 +29,17 @@ OBJS=$(SRCS:src/%.cpp=obj/%.o)
 
 all: release
 
-release: $(OBJS)
+release: objdir $(OBJS)
 	$(COMPILER) $(LDFLAGS) -o $(EXECUTABLE) $(OBJS) $(LDLIBS) 
+
+objdir:
+	mkdir -p obj
 
 obj/%.o: src/%.cpp
 	$(COMPILER) $(FLAGS) -o $@ -c $<
 
 
-zip: dist-clean
+zip:
 ifdef TEAM_ID
 	zip $(strip $(TEAM_ID)).zip -r Makefile src
 else
