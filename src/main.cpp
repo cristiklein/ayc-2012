@@ -9,9 +9,25 @@
 #include <set>
 #include <vector>
 #include <fstream>
+#include <sys/time.h>
 #include <time.h>
 
 #include "UniqueId.hh"
+
+#define TIMEME \
+	timeme(__FILE__, __LINE__, __func__);
+
+void timeme(const char *file, int line, const char *func)
+{
+	static struct timeval last;
+	struct timeval now, diff;
+
+	gettimeofday(&now, NULL);
+	timersub(&now, &last, &diff);
+	last = now;
+
+	fprintf(stderr, "+%6ld.%06ld %s:%d %s\n", diff.tv_sec, diff.tv_usec, file, line, func);
+}
 
 using namespace std;
 
