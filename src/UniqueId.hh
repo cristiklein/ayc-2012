@@ -5,30 +5,35 @@
 #include <unordered_map>
 #include <vector>
 
-template<class Id = int, class Name = std::string>
+template<class _Id = int, class _Name = std::string>
 class UniqueId
 {
-	std::unordered_map<Name, Id> nameToId;
-	std::vector<Name> idToName;
+public:
+	typedef _Id Id;
+	typedef _Name Name;
 
 	Id getId(Name s)
 	{
 		/* Check if Id is already registered */
-		auto it = stringToId.find(s);
-		if (it != std::end(stringToId))
+		auto it = nameToId.find(s);
+		if (it != std::end(nameToId))
 			return it->second;
 
 		/* Not found, add */
-		Id newId = idToString.size();
-		idToString.push_back(s);
-		stringToId[s] = newId;
+		Id newId = idToName.size();
+		idToName.push_back(s);
+		nameToId[s] = newId;
 		return newId;
 	}
 
-	Name getString(Id id)
+	Name getName(Id id)
 	{
-		return idToString[id];
+		return idToName[id];
 	}
+
+private:
+	std::unordered_map<Name, Id> nameToId;
+	std::vector<Name> idToName;
 };
 
 #endif /* UNIQUE_ID */
