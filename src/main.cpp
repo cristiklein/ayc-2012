@@ -56,6 +56,7 @@ struct Flight{
 	unsigned long land_time;/*!< Land time (epoch). */
 	Id company;/*!< The company's name. */
 	float cost;/*!< The cost of the flight. */
+	float discount;/*!< The discount applied to the cost. */
 };
 
 /**
@@ -71,7 +72,7 @@ struct Travel{
 
 time_t convert_string_to_timestamp(const string &s);
 void print_params(Parameters &parameters);
-void print_flight(const Flight& flight, float discount);
+void print_flight(const Flight& flight, ofstream& output);
 void read_parameters(Parameters& parameters, int argc, char **argv);
 void split_string(vector<string>& result, string line, char separator);
 void parse_flight(vector<Flight>& flights, string& line);
@@ -81,10 +82,10 @@ void parse_alliances(vector<vector<Id> > &alliances, string filename);
 bool company_are_in_a_common_alliance(Id c1, Id c2, vector<vector<Id> >& alliances);
 bool has_just_traveled_with_company(Flight& flight_before, Flight& current_flight);
 bool has_just_traveled_with_alliance(Flight& flight_before, Flight& current_flight, vector<vector<Id> >& alliances);
-float apply_discount(Travel & travel, vector<vector<Id> >&alliances);
+void apply_discount(Travel & travel, vector<vector<Id> >&alliances);
 float compute_cost(Travel & travel, vector<vector<Id> >&alliances);
 void print_alliances(vector<vector<Id> > &alliances);
-void print_flights(const vector<Flight>& flights, float discount);
+void print_flights(const vector<Flight>& flights, ofstream& output);
 bool nerver_traveled_to(Travel travel, Id city);
 void print_travel(Travel& travel, vector<vector<Id> >&alliances);
 void compute_path(vector<Flight>& flights, Id to, vector<Travel>& travels, unsigned long t_min, unsigned long t_max, Parameters parameters);
@@ -175,32 +176,30 @@ vector<Travel> play_hard(vector<Flight>& flights, Parameters& parameters, vector
 }
 
 /**
- * \fn float apply_discount(Travel & travel, vector<vector<Id> >&alliances)
+ * \fn void apply_discount(Travel & travel, vector<vector<Id> >&alliances)
  * \brief Apply a discount when possible to the flights of a travel.
  * \param travel A travel (it will be modified to apply the discounts).
  * \param alliances The alliances.
  */
-float apply_discount(Travel & travel, vector<vector<Id> >&alliances){
-	bool same_company = true;
-	bool same_alliance = true;
-
-	for(unsigned int i=1; i<travel.flights.size(); i++) {
-		if (!same_company && !same_alliance)
-			break;
-
-		const Flight& prev_flight = travel.flights[i-1];
-		const Flight& curr_flight = travel.flights[i];
-		if (same_company && prev_flight.company != curr_flight.company)
-			same_company = false;
-		if (same_alliance && !company_are_in_a_common_alliance(prev_flight.company, curr_flight.company, alliances))
-			same_alliance = false;
+void apply_discount(Travel & travel, vector<vector<Id> >&alliances){
+	if(travel.flights.size()>0)
+		travel.flights[0].discount = 1;
+	if(travel.flights.size()>1){
+		for(unsigned int i=1; i<travel.flights.size(); i++){
+			Flight& flight_before = travel.flights[i-1];
+			Flight& current_flight = travel.flights[i];
+			if(has_just_traveled_with_company(flight_before, current_flight)){
+				flight_before.discount = 0.7;
+				current_flight.discount = 0.7;
+			}else if(has_just_traveled_with_alliance(flight_before, current_flight, alliances)){
+				if(flight_before.discount >0.8)
+					flight_before.discount = 0.8;
+				current_flight.discount = 0.8;
+			}else{
+				current_flight.discount = 1;
+			}
+		}
 	}
-
-	if (same_company)
-		return 0.7;
-	if (same_alliance)
-		return 0.8;
-	return 1;
 }
 
 /**
@@ -211,9 +210,9 @@ float apply_discount(Travel & travel, vector<vector<Id> >&alliances){
  */
 float compute_cost(Travel & travel, vector<vector<Id> >&alliances){
 	float result = 0;
-	float discount = apply_discount(travel, alliances);
+	apply_discount(travel, alliances);
 	for(unsigned int i=0; i<travel.flights.size(); i++){
-		result += (travel.flights[i].cost * discount);
+		result += (travel.flights[i].cost * travel.flights[i].discount);
 	}
 	return result;
 }
@@ -389,10 +388,10 @@ void print_params(Parameters &parameters){
 }
 
 /**
- * \fn void print_flight(Flight& flight)
+ * \fn void print_flight(const Flight& flight, ofstream& output)
  * \brief You can use this function to display a flight
  */
-void print_flight(const Flight& flight, ofstream& output, float discount){
+void print_flight(const Flight& flight, ofstream& output){
 	struct tm * take_off_t, *land_t;
 	take_off_t = gmtime(((const time_t*)&(flight.take_off_time)));
 	output<<getName(flight.company)<<"-";
@@ -400,7 +399,7 @@ void print_flight(const Flight& flight, ofstream& output, float discount){
 	output<<getName(flight.from)<<" ("<<(take_off_t->tm_mon+1)<<"/"<<take_off_t->tm_mday<<" "<<take_off_t->tm_hour<<"h"<<take_off_t->tm_min<<"min"<<")"<<"/";
 	land_t = gmtime(((const time_t*)&(flight.land_time)));
 	output<<getName(flight.to)<<" ("<<(land_t->tm_mon+1)<<"/"<<land_t->tm_mday<<" "<<land_t->tm_hour<<"h"<<land_t->tm_min<<"min"<<")-";
-	output<<flight.cost<<"$"<<"-"<<discount*100<<"%"<<endl;
+	output<<flight.cost<<"$"<<"-"<<flight.discount*100<<"%"<<endl;
 
 }
 
@@ -604,13 +603,13 @@ void print_alliances(vector<vector<Id> > &alliances){
 }
 
 /**
- * \fn void print_flights(vector<Flight>& flights)
+ * \fn void print_flights(vector<Flight>& flights, ofstream& output)
  * \brief Display the flights on the standard output.
  * \param flights The flights.
  */
-void print_flights(vector<Flight>& flights, ofstream& output, float discount){
+void print_flights(vector<Flight>& flights, ofstream& output){
 	for(unsigned int i=0; i<flights.size(); i++)
-		print_flight(flights[i], output, discount);
+		print_flight(flights[i], output);
 }
 
 /**
@@ -634,9 +633,9 @@ bool nerver_traveled_to(Travel travel, Id city){
  * \param alliances The alliances (used to compute the price).
  */
 void print_travel(Travel& travel, vector<vector<Id> >&alliances, ofstream& output){
-	float discount = apply_discount(travel, alliances);
+	apply_discount(travel, alliances);
 	output<<"Price : "<<compute_cost(travel, alliances)<<endl;
-	print_flights(travel.flights, output, discount);
+	print_flights(travel.flights, output);
 	output<<endl;
 }
 
