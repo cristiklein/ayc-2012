@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <string>
 #include <list>
+#include <set>
 #include <vector>
 #include <fstream>
 #include <time.h>
@@ -68,7 +69,13 @@ struct Travel{
 	vector<Flight> flights;/*!< A travel is just a list of Flight(s). */
 };
 
-
+/**
+ * \struct Alliances
+ * \brief Store whether two companies are in the same alliance
+ */
+struct Alliances{
+	set<pair<Id, Id>> areAllied;
+};
 
 time_t convert_string_to_timestamp(const string &s);
 void print_params(Parameters &parameters);
@@ -77,28 +84,28 @@ void read_parameters(Parameters& parameters, int argc, char **argv);
 void split_string(vector<string>& result, string line, char separator);
 void parse_flight(vector<Flight>& flights, string& line);
 void parse_flights(vector<Flight>& flights, string filename);
-void parse_alliance(vector<Id> &alliance, string line);
-void parse_alliances(vector<vector<Id> > &alliances, string filename);
-bool company_are_in_a_common_alliance(Id c1, Id c2, vector<vector<Id> >& alliances);
+void parse_alliance(Alliances &alliance, string line);
+void parse_alliances(Alliances &alliances, string filename);
+bool company_are_in_a_common_alliance(Id c1, Id c2, const Alliances& alliances);
 bool has_just_traveled_with_company(Flight& flight_before, Flight& current_flight);
-bool has_just_traveled_with_alliance(Flight& flight_before, Flight& current_flight, vector<vector<Id> >& alliances);
-void apply_discount(Travel & travel, vector<vector<Id> >&alliances);
-float compute_cost(Travel & travel, vector<vector<Id> >&alliances);
-void print_alliances(vector<vector<Id> > &alliances);
+bool has_just_traveled_with_alliance(Flight& flight_before, Flight& current_flight, const Alliances& alliances);
+void apply_discount(Travel & travel, const Alliances&alliances);
+float compute_cost(Travel & travel, const Alliances&alliances);
+void print_alliances(const Alliances &alliances);
 void print_flights(const vector<Flight>& flights, ofstream& output);
 bool nerver_traveled_to(Travel travel, Id city);
-void print_travel(Travel& travel, vector<vector<Id> >&alliances);
+void print_travel(Travel& travel, const Alliances&alliances);
 void compute_path(vector<Flight>& flights, Id to, vector<Travel>& travels, unsigned long t_min, unsigned long t_max, Parameters parameters);
-Travel find_cheapest(vector<Travel>& travels, vector<vector<Id> >&alliances);
+Travel find_cheapest(vector<Travel>& travels, const Alliances&alliances);
 void fill_travel(vector<Travel>& travels, vector<Flight>& flights, Id starting_point, unsigned long t_min, unsigned long t_max);
 void merge_path(vector<Travel>& travel1, vector<Travel>& travel2);
-Travel work_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances);
-vector<Travel> play_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances);
-void output_play_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances);
-void output_work_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances);
+Travel work_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances);
+vector<Travel> play_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances);
+void output_play_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances);
+void output_work_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances);
 
 /**
- * \fn Travel work_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances)
+ * \fn Travel work_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances)
  * \brief Solve the "Work Hard" problem.
  * This problem can be considered as the easy one. The goal is to find the cheapest way to join a point B from a point A regarding some parameters.
  * \param flights The list of available flights.
@@ -106,7 +113,7 @@ void output_work_hard(vector<Flight>& flights, Parameters& parameters, vector<ve
  * \param alliances The alliances between companies.
  * \return The cheapest trip found.
  */
-Travel work_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances){
+Travel work_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances){
 	vector<Travel> travels;
 	//First, we need to create as much travels as it as the number of flights that take off from the
 	//first city
@@ -122,7 +129,7 @@ Travel work_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<
 }
 
 /**
- * \fn vector<Travel> play_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances)
+ * \fn vector<Travel> play_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances)
  * \brief Solve the "Play Hard" problem.
  * This problem can be considered as the hard one. The goal is to find the cheapest way to join a point B from a point A regarding some parameters and for each city in the vacation destination list.
  * \param flights The list of available flights.
@@ -130,7 +137,7 @@ Travel work_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<
  * \param alliances The alliances between companies.
  * \return The cheapest trips found ordered by vacation destination (only the best result for each vacation destination).
  */
-vector<Travel> play_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances){
+vector<Travel> play_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances){
 	vector<Travel> results;
 	list<Id>::iterator it = parameters.airports_of_interest.begin();
 	for(; it != parameters.airports_of_interest.end(); it++){
@@ -176,12 +183,12 @@ vector<Travel> play_hard(vector<Flight>& flights, Parameters& parameters, vector
 }
 
 /**
- * \fn void apply_discount(Travel & travel, vector<vector<Id> >&alliances)
+ * \fn void apply_discount(Travel & travel, const Alliances&alliances)
  * \brief Apply a discount when possible to the flights of a travel.
  * \param travel A travel (it will be modified to apply the discounts).
  * \param alliances The alliances.
  */
-void apply_discount(Travel & travel, vector<vector<Id> >&alliances){
+void apply_discount(Travel & travel, const Alliances&alliances){
 	if(travel.flights.size()>0)
 		travel.flights[0].discount = 1;
 	if(travel.flights.size()>1){
@@ -203,12 +210,12 @@ void apply_discount(Travel & travel, vector<vector<Id> >&alliances){
 }
 
 /**
- * \fn float compute_cost(Travel & travel, vector<vector<Id> >&alliances)
+ * \fn float compute_cost(Travel & travel, const Alliances&alliances)
  * \brief Compute the cost of a travel and uses the discounts when possible.
  * \param travel The travel.
  * \param alliances The alliances.
  */
-float compute_cost(Travel & travel, vector<vector<Id> >&alliances){
+float compute_cost(Travel & travel, const Alliances&alliances){
 	float result = 0;
 	apply_discount(travel, alliances);
 	for(unsigned int i=0; i<travel.flights.size(); i++){
@@ -261,13 +268,13 @@ void compute_path(vector<Flight>& flights, Id to, vector<Travel>& travels, unsig
 }
 
 /**
- * \fn Travel find_cheapest(vector<Travel>& travels, vector<vector<Id> >&alliances)
+ * \fn Travel find_cheapest(vector<Travel>& travels, const Alliances&alliances)
  * \brief Finds the cheapest travel amongst the travels's vector.
  * \param travels A vector of acceptable travels
  * \param alliances The alliances
  * \return The cheapest travel found.
  */
-Travel find_cheapest(vector<Travel>& travels, vector<vector<Id> >&alliances){
+Travel find_cheapest(vector<Travel>& travels, const Alliances&alliances){
 	Travel result;
 	if(travels.size()>0){
 		result = travels.back();
@@ -508,25 +515,33 @@ void parse_flights(vector<Flight>& flights, string filename){
 }
 
 /**
- * \fn void parse_alliance(vector<Id> &alliance, string line)
+ * \fn void parse_alliance(Alliances &alliance, string line)
  * \brief This function parses a line containing alliances between companies.
  * \param alliance A vector of companies sharing a same alliance.
  * \param line A line that contains the name of companies in the same alliance.
  */
-void parse_alliance(vector<Id> &alliance, string line){
+void parse_alliance(Alliances &alliances, string line){
 	vector<string> splittedLine;
 	split_string(splittedLine, line, ';');
-	for(unsigned int i=0; i<splittedLine.size(); i++){
-		alliance.push_back(getId(splittedLine[i]));
+	for(unsigned int i=0; i<splittedLine.size(); i++)
+	for(unsigned int j=i+1; j<splittedLine.size(); j++){
+		Id c1 = getId(splittedLine[i]);
+		Id c2 = getId(splittedLine[j]);
+		if (c1 == c2)
+			continue;
+
+		alliances.areAllied.insert(pair<Id,Id>(c1,c2));
+		alliances.areAllied.insert(pair<Id,Id>(c2,c1));
 	}
 }
+
 /**
- * \fn void parse_alliances(vector<vector<Id> > &alliances, string filename)
+ * \fn void parse_alliances(Alliances &alliances, string filename)
  * \brief This function parses a line containing alliances between companies.
  * \param alliances A 2D vector representing the alliances. Companies on the same line are in the same alliance.
  * \param filename The name of the file containing the alliances description.
  */
-void parse_alliances(vector<vector<Id> > &alliances, string filename){
+void parse_alliances(Alliances &alliances, string filename){
 	string line = "";
 	ifstream file;
 
@@ -537,31 +552,20 @@ void parse_alliances(vector<vector<Id> > &alliances, string filename){
 	}
 	while (!file.eof())
 	{
-		vector<Id> alliance;
 		getline(file, line);
-		parse_alliance(alliance, line);
-		alliances.push_back(alliance);
+		parse_alliance(alliances, line);
 	}
 }
 
 /**
- * \fn bool company_are_in_a_common_alliance(Id c1, Id c2, vector<vector<Id> >& alliances)
+ * \fn bool company_are_in_a_common_alliance(Id c1, Id c2, const Alliances& alliances)
  * \brief Check if 2 companies are in the same alliance.
  * \param c1 The first company's name.
  * \param c2 The second company's name.
  * \param alliances A 2D vector representing the alliances. Companies on the same line are in the same alliance.
  */
-bool company_are_in_a_common_alliance(Id c1, Id c2, vector<vector<Id> >& alliances){
-	bool result = false;
-	for(unsigned int i=0; i<alliances.size(); i++){
-		bool c1_found = false, c2_found = false;
-		for(unsigned int j=0; j<alliances[i].size(); j++){
-			if(alliances[i][j] == c1) c1_found = true;
-			if(alliances[i][j] == c2) c2_found = true;
-		}
-		result |= (c1_found && c2_found);
-	}
-	return result;
+bool company_are_in_a_common_alliance(Id c1, Id c2, const Alliances& alliances){
+	return alliances.areAllied.count(pair<Id,Id>(c1,c2)) != 0;
 }
 
 /**
@@ -583,7 +587,7 @@ bool has_just_traveled_with_company(Flight& flight_before, Flight& current_fligh
  * \param alliances The alliances.
  * \return The 2 flights are with the same alliance.
  */
-bool has_just_traveled_with_alliance(Flight& flight_before, Flight& current_flight, vector<vector<Id> >& alliances){
+bool has_just_traveled_with_alliance(Flight& flight_before, Flight& current_flight, const Alliances& alliances){
 	return company_are_in_a_common_alliance(current_flight.company, flight_before.company, alliances);
 }
 
@@ -592,14 +596,8 @@ bool has_just_traveled_with_alliance(Flight& flight_before, Flight& current_flig
  * \brief Display the alliances on the standard output.
  * \param alliances The alliances.
  */
-void print_alliances(vector<vector<Id> > &alliances){
-	for(unsigned int i=0; i<alliances.size(); i++){
-		cout<<"Alliance "<<i<<" : ";
-		for(unsigned int j=0; j<alliances[i].size(); j++){
-			cout<<"**"<<getName(alliances[i][j])<<"**; ";
-		}
-		cout<<endl;
-	}
+void print_alliances(const Alliances &alliances){
+	cout<<"Alliance: NOT implemented"<<endl;
 }
 
 /**
@@ -627,12 +625,12 @@ bool nerver_traveled_to(Travel travel, Id city){
 }
 
 /**
- * \fn void print_travel(Travel& travel, vector<vector<Id> >&alliances)
+ * \fn void print_travel(Travel& travel, const Alliances&alliances)
  * \brief Display a travel on the standard output.
  * \param travel The travel.
  * \param alliances The alliances (used to compute the price).
  */
-void print_travel(Travel& travel, vector<vector<Id> >&alliances, ofstream& output){
+void print_travel(Travel& travel, const Alliances&alliances, ofstream& output){
 	apply_discount(travel, alliances);
 	output<<"Price : "<<compute_cost(travel, alliances)<<endl;
 	print_flights(travel.flights, output);
@@ -640,13 +638,13 @@ void print_travel(Travel& travel, vector<vector<Id> >&alliances, ofstream& outpu
 }
 
 /**
- * \fn void output_play_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances)
+ * \fn void output_play_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances)
  * \brief Display the solution of the "Play Hard" problem by solving it first.
  * \param flights The list of available flights.
  * \param parameters The parameters.
  * \param alliances The alliances between companies.
  */
-void output_play_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances){
+void output_play_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances){
 	ofstream output;
 	output.open(parameters.play_hard_file.c_str());
 	vector<Travel> travels = play_hard(flights, parameters, alliances);
@@ -661,13 +659,13 @@ void output_play_hard(vector<Flight>& flights, Parameters& parameters, vector<ve
 }
 
 /**
- * \fn void output_work_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances)
+ * \fn void output_work_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances)
  * \brief Display the solution of the "Work Hard" problem by solving it first.
  * \param flights The list of available flights.
  * \param parameters The parameters.
  * \param alliances The alliances between companies.
  */
-void output_work_hard(vector<Flight>& flights, Parameters& parameters, vector<vector<Id> >& alliances){
+void output_work_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances){
 	ofstream output;
 	output.open(parameters.work_hard_file.c_str());
 	Travel travel = work_hard(flights, parameters, alliances);
@@ -679,7 +677,7 @@ void output_work_hard(vector<Flight>& flights, Parameters& parameters, vector<ve
 int main(int argc, char **argv) {
 	//Declare variables and read the args
 	Parameters parameters;
-	vector<vector<Id> > alliances;
+	Alliances alliances;
 	read_parameters(parameters, argc, argv);
 //	cout<<"Printing parameters..."<<endl;
 //	print_params(parameters);
