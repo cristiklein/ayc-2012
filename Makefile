@@ -83,4 +83,13 @@ test2: release
 	rm -f scenarios/newinput2/play_hard.txt
 	rm -f scenarios/newinput2/work_hard.txt
 
+test3: release
+	rm -f scenarios/newinput3/play_hard.txt
+	rm -f scenarios/newinput3/work_hard.txt
+	scenarios/newinput3/script.sh
+	diff -u scenarios/newinput3/play_hard.txt.expected scenarios/newinput3/play_hard.txt
+	diff -u scenarios/newinput3/work_hard.txt.expected scenarios/newinput3/work_hard.txt
+	rm -f scenarios/newinput3/play_hard.txt
+	rm -f scenarios/newinput3/work_hard.txt
+
 include .depend	
