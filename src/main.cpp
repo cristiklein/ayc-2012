@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <string>
 #include <list>
+#include <map>
 #include <set>
 #include <vector>
 #include <fstream>
@@ -77,7 +78,7 @@ struct Flight{
 	float discount;/*!< The discount applied to the cost. */
 };
 
-typedef unordered_multimap<Id, Flight> Flights;
+typedef unordered_map<Id, multimap<unsigned long, Flight>> Flights; /* ordered by take_off_time */
 
 /**
  * \struct Travel
@@ -264,13 +265,15 @@ void compute_path(const Flights& flights, Id to, vector<Travel>& travels, unsign
 		if(current_city.to == to){
 			final_travels.push_back(travel);
 		}else{//otherwise, we need to compute a path
-			auto range = flights.equal_range(current_city.to);
-			for(auto it = range.first; it != range.second; it++){
+			auto itFlightsFromCurrentCity = flights.find(current_city.to);
+			if (itFlightsFromCurrentCity == flights.end())
+				continue;
+			const multimap<unsigned long, Flight> &flightFromCurrentCity = itFlightsFromCurrentCity->second;
+			auto itlo = flightFromCurrentCity.lower_bound(current_city.land_time);
+			auto itup = flightFromCurrentCity.upper_bound(current_city.land_time + parameters.max_layover_time);
+			for(auto it = itlo; it != itup; it++){
 				const Flight &flight = it->second;
-				if(		flight.take_off_time >= t_min &&
-						flight.land_time <= t_max &&
-						(flight.take_off_time > current_city.land_time) &&
-						flight.take_off_time - current_city.land_time <= parameters.max_layover_time &&
+				if(flight.land_time <= t_max &&
 						never_traveled_to(travel, flight.to)){
 					Travel newTravel = travel;
 					newTravel.flights.push_back(flight);
@@ -322,11 +325,15 @@ Travel find_cheapest(vector<Travel>& travels, const Alliances&alliances){
  * \param t_max You must not be in a plane after this value (epoch).
  */
 void fill_travel(vector<Travel>& travels, const Flights& flights, Id starting_point, unsigned long t_min, unsigned long t_max){
-	auto range = flights.equal_range(starting_point);
-	for(auto it = range.first; it != range.second; it++){
+	auto itFlightsFromCurrentCity = flights.find(starting_point);
+	if (itFlightsFromCurrentCity == flights.end())
+		return;
+	const multimap<unsigned long, Flight> &flightFromCurrentCity = itFlightsFromCurrentCity->second;
+	auto itlo = flightFromCurrentCity.lower_bound(t_min);
+	auto itup = flightFromCurrentCity.end();
+	for(auto it = itlo; it != itup; it++){
 		const Flight &flight = it->second;
-		if(flight.take_off_time >= t_min &&
-		   flight.land_time <= t_max){
+		if(flight.land_time <= t_max){
 			Travel t;
 			t.flights.push_back(flight);
 			travels.push_back(t);
@@ -530,7 +537,7 @@ void parse_flights(Flights& flights, string filename){
 		Flight flight;
 		getline(file, line);
 		parse_flight(flight, line);
-		flights.insert({{flight.from, flight}});
+		flights[flight.from].insert({{flight.take_off_time, flight}});
 	}
 }
 
