@@ -116,7 +116,9 @@ void print_flights(const vector<Flight>& flights, const vector<float>& discounts
 bool never_traveled_to(Travel travel, Id city);
 void print_travel(const Travel& travel, const Alliances&alliances);
 void compute_path(const Flights& flights, Id to, vector<Travel>& travels, unsigned long t_min, unsigned long t_max, Parameters parameters);
-Travel find_cheapest(const vector<Travel>& travels, const Alliances&alliances);
+Travel find_cheapest(const vector<Travel>& flights, const Alliances& alliances);
+Travel find_cheapest(const vector<Travel>& inbounds, const vector<Travel>& outbounds, const Alliances&alliances);
+Travel find_cheapest(const vector<Travel>& inbounds, const vector<Travel>& vias, const vector<Travel>& outbounds, const Alliances&alliances);
 void fill_travel(vector<Travel>& travels, const Flights& flights, Id starting_point, unsigned long t_min, unsigned long t_max);
 void merge_path(vector<Travel>& travel1, vector<Travel>& travel2);
 Travel work_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
@@ -143,9 +145,8 @@ Travel work_hard(Flights& flights, Parameters& parameters, const Alliances& alli
 	//Then we need to travel back
 	fill_travel(travels_back, flights, parameters.to, parameters.ar_time_min, parameters.ar_time_max);
 	compute_path(flights, parameters.from, travels_back, parameters.ar_time_min, parameters.ar_time_max, parameters);
-	merge_path(travels, travels_back);
-	Travel go =  find_cheapest(travels, alliances);
-	return go;
+
+	return find_cheapest(travels, travels_back, alliances);
 }
 
 /**
@@ -176,9 +177,7 @@ vector<Travel> play_hard(Flights& flights, Parameters& parameters, const Allianc
 		//compute the paths from conference to home
 		fill_travel(conference_to_home, flights, parameters.to, parameters.ar_time_min, parameters.ar_time_max);
 		compute_path(flights, parameters.from, conference_to_home, parameters.ar_time_min, parameters.ar_time_max, parameters);
-		merge_path(home_to_vacation, vacation_to_conference);
-		merge_path(home_to_vacation, conference_to_home);
-		all_travels = home_to_vacation;
+		Travel best1 = find_cheapest(home_to_vacation, vacation_to_conference, conference_to_home, alliances);
 
 		/*
 		 * The second part compute a travel from home -> conference -> vacation -> home
@@ -193,11 +192,14 @@ vector<Travel> play_hard(Flights& flights, Parameters& parameters, const Allianc
 		//compute paths from vacation to home
 		fill_travel(vacation_to_home, flights, current_airport_of_interest, parameters.ar_time_max+parameters.vacation_time_min, parameters.ar_time_max+parameters.vacation_time_max);
 		compute_path(flights, parameters.from, vacation_to_home, parameters.ar_time_max+parameters.vacation_time_min, parameters.ar_time_max+parameters.vacation_time_max, parameters);
-		merge_path(home_to_conference, conference_to_vacation);
-		merge_path(home_to_conference, vacation_to_home);
-		all_travels.insert(all_travels.end(), home_to_conference.begin(), home_to_conference.end());
-		Travel cheapest_travel = find_cheapest(all_travels, alliances);
-		results.push_back(cheapest_travel);
+		Travel best2 = find_cheapest(home_to_conference, conference_to_vacation, vacation_to_home, alliances);
+
+		float cost1 = best1.flights.size() ? compute_cost(best1, alliances) : INFINITY;
+		float cost2 = best2.flights.size() ? compute_cost(best2, alliances) : INFINITY;
+		if (cost1 < cost2)
+			results.push_back(best1);
+		else
+			results.push_back(best2);
 	}
 	return results;
 }
@@ -357,6 +359,68 @@ void merge_path(vector<Travel>& travel1, vector<Travel>& travel2){
 	}
 	travel1 = result;
 }
+
+Travel find_cheapest(const vector<Travel> &inbounds, const vector<Travel> &outbounds, const Alliances &alliances) {
+	Travel bestTravel;
+	float bestCost = INFINITY;
+
+	float cheapestInbound  = compute_cost(find_cheapest(inbounds, alliances), alliances);
+	float cheapestOutbound = compute_cost(find_cheapest(outbounds, alliances), alliances);
+
+	for (const Travel &inbound : inbounds) {
+		if (compute_cost(inbound, alliances) - 0.3 * inbound.flights.back()->cost > cheapestInbound) continue;
+		for (const Travel &outbound : outbounds) {
+			if (compute_cost(outbound, alliances) - 0.3 * outbound.flights.front()->cost > cheapestOutbound) continue;
+			Travel travel;
+			travel.flights = inbound.flights;
+			travel.flights.insert(travel.flights.end(), outbound.flights.begin(), outbound.flights.end());
+			float cost = compute_cost(travel, alliances);
+			if (cost < bestCost) {
+				bestTravel = travel;
+				bestCost = cost;
+			}
+		}
+	}
+	return bestTravel;
+}
+
+Travel find_cheapest(const vector<Travel> &inbounds, const vector<Travel> &vias, const vector<Travel> &outbounds, const Alliances &alliances) {
+	Travel bestTravel;
+	float bestCost = INFINITY;
+
+	if (inbounds.size() == 0 ||
+		vias.size() == 0 ||
+		outbounds.size() == 0)
+		return bestTravel;
+
+	float cheapestIn  = compute_cost(find_cheapest(inbounds, alliances), alliances);
+	float cheapestVia = compute_cost(find_cheapest(vias, alliances), alliances);
+	float cheapestOut = compute_cost(find_cheapest(outbounds, alliances), alliances);
+
+	for (const Travel &inbound : inbounds) {
+		if (compute_cost(inbound, alliances) - 0.3 * inbound.flights.back()->cost > cheapestIn) continue;
+		for (const Travel &via : vias) {
+			if (compute_cost(via, alliances)
+				- 0.3 * via.flights.front()->cost
+				- 0.3 * via.flights.back()->cost > cheapestVia)
+				continue;
+			for (const Travel &outbound : outbounds) {
+				if (compute_cost(outbound, alliances) - 0.3 * outbound.flights.front()->cost > cheapestOut) continue;
+				Travel travel;
+				travel.flights = inbound.flights;
+				travel.flights.insert(travel.flights.end(), via.flights.begin(), via.flights.end());
+				travel.flights.insert(travel.flights.end(), outbound.flights.begin(), outbound.flights.end());
+				float cost = compute_cost(travel, alliances);
+				if (cost < bestCost) {
+					bestTravel = travel;
+					bestCost = cost;
+				}
+			}
+		}
+	}
+	return bestTravel;
+}
+
 
 /**
  * \fn time_t convert_string_to_timestamp(const string &s)
