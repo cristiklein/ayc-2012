@@ -7,6 +7,7 @@
 #include <string>
 #include <list>
 #include <map>
+#include <math.h>
 #include <set>
 #include <vector>
 #include <fstream>
@@ -113,9 +114,9 @@ float compute_cost(const Travel & travel, const Alliances&alliances);
 void print_alliances(const Alliances &alliances);
 void print_flights(const vector<Flight>& flights, const vector<float>& discounts, ofstream& output);
 bool never_traveled_to(Travel travel, Id city);
-void print_travel(Travel& travel, const Alliances&alliances);
+void print_travel(const Travel& travel, const Alliances&alliances);
 void compute_path(const Flights& flights, Id to, vector<Travel>& travels, unsigned long t_min, unsigned long t_max, Parameters parameters);
-Travel find_cheapest(vector<Travel>& travels, const Alliances&alliances);
+Travel find_cheapest(const vector<Travel>& travels, const Alliances&alliances);
 void fill_travel(vector<Travel>& travels, const Flights& flights, Id starting_point, unsigned long t_min, unsigned long t_max);
 void merge_path(vector<Travel>& travel1, vector<Travel>& travel2);
 Travel work_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
@@ -207,7 +208,7 @@ vector<Travel> play_hard(Flights& flights, Parameters& parameters, const Allianc
  * \param travel A travel (it will be modified to apply the discounts).
  * \param alliances The alliances.
  */
-vector<float> apply_discount(Travel & travel, const Alliances &alliances){
+vector<float> apply_discount(const Travel & travel, const Alliances &alliances){
 	vector<float> discounts(travel.flights.size(), 1);
 	for(unsigned int i=1; i<travel.flights.size(); i++){
 		const Flight& flight_before = *travel.flights[i-1];
@@ -230,7 +231,7 @@ vector<float> apply_discount(Travel & travel, const Alliances &alliances){
  * \param travel The travel.
  * \param alliances The alliances.
  */
-float compute_cost(Travel & travel, const Alliances&alliances){
+float compute_cost(const Travel & travel, const Alliances&alliances){
 	vector<float> discounts = apply_discount(travel, alliances);
 	float result = 0;
 	for(unsigned int i=0; i<travel.flights.size(); i++){
@@ -291,21 +292,18 @@ void compute_path(const Flights& flights, Id to, vector<Travel>& travels, unsign
  * \param alliances The alliances
  * \return The cheapest travel found.
  */
-Travel find_cheapest(vector<Travel>& travels, const Alliances&alliances){
-	Travel result;
-	if(travels.size()>0){
-		result = travels.back();
-		travels.pop_back();
-	}else
-		return result;
-	while(travels.size()>0){
-		Travel temp = travels.back();
-		travels.pop_back();
-		if(compute_cost(temp, alliances) < compute_cost(result, alliances)){
-			result = temp;
+Travel find_cheapest(const vector<Travel>& travels, const Alliances&alliances){
+	const Travel *bestTravel = NULL;
+	float bestCost = INFINITY;
+
+	for (const Travel &travel : travels) {
+		float currentCost = compute_cost(travel, alliances);
+		if (currentCost < bestCost) {
+			bestCost = currentCost;
+			bestTravel = &travel;
 		}
 	}
-	return result;
+	return *bestTravel;
 }
 
 /**
@@ -652,7 +650,7 @@ bool never_traveled_to(Travel travel, Id city){
  * \param travel The travel.
  * \param alliances The alliances (used to compute the price).
  */
-void print_travel(Travel& travel, const Alliances&alliances, ofstream& output){
+void print_travel(const Travel& travel, const Alliances&alliances, ofstream& output){
 	vector<float> discounts = apply_discount(travel, alliances);
 	output<<"Price : "<<compute_cost(travel, alliances)<<endl;
 	print_flights(travel.flights, discounts, output);
