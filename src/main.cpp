@@ -2,6 +2,7 @@
  * \file main.cpp
  * \brief This file contains source code that solves the Work Hard - Play Hard problem for the Acceler8 contest
  */
+#include <algorithm>
 #include <iostream>
 #include <cstdlib>
 #include <string>
@@ -14,6 +15,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unordered_map>
+#include <queue>
 
 #include "UniqueId.hh"
 
@@ -253,38 +255,82 @@ float compute_cost(const Travel & travel, const Alliances&alliances){
  * \param t_max You must not be in a plane after this value (epoch)
  * \param parameters The program parameters
  */
-void compute_path(const Flights& flights, Id to, vector<Travel>& travels, unsigned long t_min, unsigned long t_max, Parameters parameters){
-	vector<Travel> final_travels;
-	while(travels.size() > 0){
-		Travel travel = travels.back();
-		const Flight &current_city = *travel.flights.back();
-		travels.pop_back();
-		//First, if a direct flight exist, it must be in the final travels
-		if(current_city.to == to){
-			final_travels.push_back(travel);
-		}else{//otherwise, we need to compute a path
-			auto itFlightsFromCurrentCity = flights.find(current_city.to);
-			if (itFlightsFromCurrentCity == flights.end())
-				continue;
-			const multimap<unsigned long, Flight> &flightFromCurrentCity = itFlightsFromCurrentCity->second;
-			auto itlo = flightFromCurrentCity.lower_bound(current_city.land_time);
-			auto itup = flightFromCurrentCity.upper_bound(current_city.land_time + parameters.max_layover_time);
-			for(auto it = itlo; it != itup; it++){
-				const Flight &flight = it->second;
-				if(flight.land_time <= t_max &&
-						never_traveled_to(travel, flight.to)){
-					Travel newTravel = travel;
-					newTravel.flights.push_back(&flight);
-					if(flight.to == to){
-						final_travels.push_back(newTravel);
-					}else{
-						travels.push_back(newTravel);
-					}
+void compute_path(const Flights& flights, Id to, vector<Travel>& final_travels, unsigned long t_min, unsigned long t_max, Parameters parameters){
+	struct Segment {
+		const struct Segment *prev;
+		const Flight *flight;
+		float cost;
+	};
+
+	vector<const Segment *> allSegments; /* our way of doing malloc() and cleaning up */
+
+	queue<pair<float, const Segment *>> queue;
+
+	for (const Travel &travel : final_travels) {
+		Segment *s = new Segment();
+		s->prev = NULL;
+		s->flight = travel.flights.front();
+		s->cost = s->flight->cost;
+		allSegments.push_back(s);
+		queue.push(pair<float, const Segment *>(s->cost, s));
+	}
+
+	vector<const Segment *> finalSegments;
+	while (!queue.empty()) {
+		const Segment *currentSegment = queue.front().second;
+		queue.pop();
+
+		const Flight &currentFlight = *currentSegment->flight;
+
+		if (currentFlight.to == to) {
+			finalSegments.push_back(currentSegment);
+			continue;
+		}
+
+		auto itFlightsFromCurrentCity = flights.find(currentFlight.to);
+		if (itFlightsFromCurrentCity == flights.end())
+			continue;
+		const multimap<unsigned long, Flight> &flightFromCurrentCity = itFlightsFromCurrentCity->second;
+		auto itlo = flightFromCurrentCity.lower_bound(currentFlight.land_time);
+		auto itup = flightFromCurrentCity.upper_bound(currentFlight.land_time + parameters.max_layover_time);
+		for(auto it = itlo; it != itup; it++){
+			const Flight &flight = it->second;
+			if (flight.land_time > t_max) continue;
+
+			bool wasHereBefore = false;
+			for (const Segment *s = currentSegment; s != NULL; s = s->prev)
+				if (s->flight->from == flight.to)
+				{
+					wasHereBefore = true;
+					break;
 				}
-			}
+			if (wasHereBefore) continue;
+
+			Segment *s = new Segment();
+			s->prev = currentSegment;
+			s->flight = &flight;
+			s->cost = currentSegment->cost + s->flight->cost;
+			allSegments.push_back(s);
+			queue.push(make_pair<float, const Segment *>(0.0f, s));
 		}
 	}
-	travels = final_travels;
+
+	final_travels.clear();
+	for (const Segment *s : finalSegments) {
+		Travel travel;
+		const Segment *currentSegment = s;
+		while (currentSegment) {
+			travel.flights.push_back(currentSegment->flight);
+			currentSegment = currentSegment->prev;
+		}
+		reverse(travel.flights.begin(), travel.flights.end());
+		final_travels.push_back(travel);
+	}
+
+	for (const Segment *s : allSegments) {
+		delete s;
+	}
+	allSegments.clear();
 }
 
 /**
