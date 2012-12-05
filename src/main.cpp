@@ -285,6 +285,7 @@ void compute_path(const Flights& flights, Id to, vector<Travel>& final_travels, 
 		queue.push(pair<float, const Segment *>(-s->totalCost, s));
 	}
 
+	float cheapest = INFINITY;
 	vector<const Segment *> finalSegments;
 	while (!queue.empty()) {
 		const Segment *currentSegment = queue.top().second;
@@ -292,8 +293,13 @@ void compute_path(const Flights& flights, Id to, vector<Travel>& final_travels, 
 
 		const Flight &currentFlight = *currentSegment->flight;
 
+		/* Pruning */
+		if (currentSegment->totalCost - 0.3 * currentFlight.cost - 0.3 * parameters.highestCost > cheapest)
+			break;
+
 		if (currentFlight.to == to) {
 			finalSegments.push_back(currentSegment);
+			cheapest = min(cheapest, currentSegment->totalCost);
 			continue;
 		}
 
