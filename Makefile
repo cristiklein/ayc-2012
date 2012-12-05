@@ -13,7 +13,7 @@ COMPILER ?= $(GCC_PATH)g++
 # using icc :
 #FLAGS ?= -std=c++0x -U__GXX_EXPERIMENTAL_COMPILER0X__ -xHOST -fast -w1 $(ICC_SUPPFLAGS)
 # using gcc :
-FLAGS ?= -std=c++0x -O3 -Wall $(GCC_SUPPFLAGS)
+FLAGS ?= -std=c++0x -g -O3 -Wall $(GCC_SUPPFLAGS)
 
 LDFLAGS ?= -g
 LDLIBS = 
