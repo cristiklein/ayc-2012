@@ -1,3 +1,4 @@
 .depend
 obj
 run
+*.out
