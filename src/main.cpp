@@ -412,13 +412,21 @@ Travel find_cheapest(const vector<Travel> &inbounds, const vector<Travel> &outbo
 	Travel bestTravel;
 	float bestCost = INFINITY;
 
+	/* Compute valid cutoffs */
+	float highestInboundLast = 0, highestOutboundFirst = 0;
+	for (const Travel &inbound : inbounds)
+		highestInboundLast = max(highestInboundLast, inbound.flights.back()->cost);
+	for (const Travel &outbound : outbounds)
+		highestOutboundFirst = max(highestOutboundFirst, outbound.flights.front()->cost);
+
 	float cheapestInbound  = compute_cost(find_cheapest(inbounds, alliances), alliances);
 	float cheapestOutbound = compute_cost(find_cheapest(outbounds, alliances), alliances);
 
 	for (const Travel &inbound : inbounds) {
-		if (compute_cost(inbound, alliances) - 0.3 * inbound.flights.back()->cost > cheapestInbound) continue;
+		if (compute_cost(inbound, alliances) - 0.3 * inbound.flights.back()->cost - highestOutboundFirst * 0.3 > cheapestInbound) continue;
 		for (const Travel &outbound : outbounds) {
-			if (compute_cost(outbound, alliances) - 0.3 * outbound.flights.front()->cost > cheapestOutbound) continue;
+			if (compute_cost(outbound, alliances) - 0.3 * outbound.flights.front()->cost - highestInboundLast * 0.3 > cheapestOutbound)
+				continue;
 			Travel travel;
 			travel.flights = inbound.flights;
 			travel.flights.insert(travel.flights.end(), outbound.flights.begin(), outbound.flights.end());
@@ -440,20 +448,33 @@ Travel find_cheapest(const vector<Travel> &inbounds, const vector<Travel> &vias,
 		vias.size() == 0 ||
 		outbounds.size() == 0)
 		return bestTravel;
+	
+	/* Compute valid cutoffs */
+	float highestInboundLast = 0, highestViaFirst = 0, highestViaLast = 0, highestOutboundFirst = 0;
+	for (const Travel &inbound : inbounds)
+		highestInboundLast = max(highestInboundLast, inbound.flights.back()->cost);
+	for (const Travel &outbound : outbounds)
+		highestOutboundFirst = max(highestOutboundFirst, outbound.flights.front()->cost);
+	for (const Travel &via : vias) {
+		highestViaFirst = max(highestViaFirst, via.flights.front()->cost);
+		highestViaLast  = max(highestViaLast , via.flights.back()->cost);
+	}
 
 	float cheapestIn  = compute_cost(find_cheapest(inbounds, alliances), alliances);
 	float cheapestVia = compute_cost(find_cheapest(vias, alliances), alliances);
 	float cheapestOut = compute_cost(find_cheapest(outbounds, alliances), alliances);
 
 	for (const Travel &inbound : inbounds) {
-		if (compute_cost(inbound, alliances) - 0.3 * inbound.flights.back()->cost > cheapestIn) continue;
+		if (compute_cost(inbound, alliances) - 0.3 * inbound.flights.back()->cost - 0.3 * highestViaFirst > cheapestIn) continue;
 		for (const Travel &via : vias) {
 			if (compute_cost(via, alliances)
 				- 0.3 * via.flights.front()->cost
-				- 0.3 * via.flights.back()->cost > cheapestVia)
+				- 0.3 * via.flights.back()->cost
+				- 0.3 * highestInboundLast
+				- 0.3 * highestOutboundFirst > cheapestVia)
 				continue;
 			for (const Travel &outbound : outbounds) {
-				if (compute_cost(outbound, alliances) - 0.3 * outbound.flights.front()->cost > cheapestOut) continue;
+				if (compute_cost(outbound, alliances) - 0.3 * outbound.flights.front()->cost - 0.3 * highestViaLast > cheapestOut) continue;
 				Travel travel;
 				travel.flights = inbound.flights;
 				travel.flights.insert(travel.flights.end(), via.flights.begin(), via.flights.end());
