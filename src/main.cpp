@@ -67,6 +67,8 @@ struct Parameters{
 	string work_hard_file;/*!< The file used to output the work hard result. */
 	string play_hard_file;/*!< The file used to output the play hard result. */
 	int nb_threads;/*!< The maximum number of worker threads */
+
+	float highestCost;/*!< The cost of the most expensive flight. Used for pruning */
 };
 
 /**
@@ -109,7 +111,7 @@ void print_flight(const Flight& flight, float discount, ostream& output);
 void read_parameters(Parameters& parameters, int argc, char **argv);
 void split_string(vector<string>& result, string line, char separator);
 void parse_flight(Flight& flight, string& line);
-void parse_flights(Flights& flights, string filename);
+float parse_flights(Flights& flights, string filename);
 void parse_alliance(Alliances &alliance, string line);
 void parse_alliances(Alliances &alliances, string filename);
 bool company_are_in_a_common_alliance(Id c1, Id c2, const Alliances& alliances);
@@ -675,7 +677,7 @@ void parse_flight(Flight& flight, string& line){
  * \param flights The vector of flights.
  * \param filename The name of the file containing the flights.
  */
-void parse_flights(Flights& flights, string filename){
+float parse_flights(Flights& flights, string filename){
 	string line = "";
 	ifstream file;
 	file.open(filename.c_str());
@@ -683,13 +685,17 @@ void parse_flights(Flights& flights, string filename){
 		cerr<<"Problem while opening the file "<<filename<<endl;
 		exit(0);
 	}
+
+	float highestCost = 0;
 	while (!file.eof())
 	{
 		Flight flight;
 		getline(file, line);
 		parse_flight(flight, line);
 		flights[flight.from].insert({{flight.take_off_time, flight}});
+		highestCost = max(highestCost, flight.cost);
 	}
+	return highestCost;
 }
 
 /**
@@ -860,7 +866,7 @@ int main(int argc, char **argv) {
 //	cout<<"Printing parameters..."<<endl;
 //	print_params(parameters);
 	Flights flights;
-	parse_flights(flights, parameters.flights_file);
+	parameters.highestCost = parse_flights(flights, parameters.flights_file);
 //	cout<<"Printing flights..."<<endl;
 //	print_flights(flights);
 //	cout<<"flights printed "<<endl;
