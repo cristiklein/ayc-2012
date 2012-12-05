@@ -3,6 +3,7 @@
  * \brief This file contains source code that solves the Work Hard - Play Hard problem for the Acceler8 contest
  */
 #include <algorithm>
+#include <assert.h>
 #include <iostream>
 #include <cstdlib>
 #include <string>
@@ -120,6 +121,7 @@ void print_alliances(const Alliances &alliances);
 void print_flights(const vector<Flight>& flights, const vector<float>& discounts, ostream& output);
 bool never_traveled_to(Travel travel, Id city);
 void print_travel(const Travel& travel, const Alliances&alliances, ostream& output);
+void compute_path(const Flights& flights, Id to, vector<Travel>& travels, unsigned long t_min, unsigned long t_max, const Parameters &parameters, const Alliances &alliances);
 Travel find_cheapest(const vector<Travel>& flights, const Alliances& alliances);
 Travel find_cheapest(const vector<Travel>& inbounds, const vector<Travel>& outbounds, const Alliances&alliances);
 Travel find_cheapest(const vector<Travel>& inbounds, const vector<Travel>& vias, const vector<Travel>& outbounds, const Alliances&alliances);
@@ -144,11 +146,11 @@ Travel work_hard(Flights& flights, Parameters& parameters, const Alliances& alli
 	//First, we need to create as much travels as it as the number of flights that take off from the
 	//first city
 	fill_travel(travels, flights, parameters.from, parameters.dep_time_min, parameters.dep_time_max);
-	compute_path(flights, parameters.to, travels, parameters.dep_time_min, parameters.dep_time_max, parameters);
+	compute_path(flights, parameters.to, travels, parameters.dep_time_min, parameters.dep_time_max, parameters, alliances);
 	vector<Travel> travels_back;
 	//Then we need to travel back
 	fill_travel(travels_back, flights, parameters.to, parameters.ar_time_min, parameters.ar_time_max);
-	compute_path(flights, parameters.from, travels_back, parameters.ar_time_min, parameters.ar_time_max, parameters);
+	compute_path(flights, parameters.from, travels_back, parameters.ar_time_min, parameters.ar_time_max, parameters, alliances);
 
 	return find_cheapest(travels, travels_back, alliances);
 }
@@ -174,13 +176,13 @@ vector<Travel> play_hard(Flights& flights, Parameters& parameters, const Allianc
 		vector<Travel> home_to_vacation, vacation_to_conference, conference_to_home;
 		//compute the paths from home to vacation
 		fill_travel(home_to_vacation, flights, parameters.from, parameters.dep_time_min-parameters.vacation_time_max, parameters.dep_time_min-parameters.vacation_time_min);
-		compute_path(flights, current_airport_of_interest, home_to_vacation, parameters.dep_time_min-parameters.vacation_time_max, parameters.dep_time_min-parameters.vacation_time_min, parameters);
+		compute_path(flights, current_airport_of_interest, home_to_vacation, parameters.dep_time_min-parameters.vacation_time_max, parameters.dep_time_min-parameters.vacation_time_min, parameters, alliances);
 		//compute the paths from vacation to conference
 		fill_travel(vacation_to_conference, flights, current_airport_of_interest, parameters.dep_time_min, parameters.dep_time_max);
-		compute_path(flights, parameters.to, vacation_to_conference, parameters.dep_time_min, parameters.dep_time_max, parameters);
+		compute_path(flights, parameters.to, vacation_to_conference, parameters.dep_time_min, parameters.dep_time_max, parameters, alliances);
 		//compute the paths from conference to home
 		fill_travel(conference_to_home, flights, parameters.to, parameters.ar_time_min, parameters.ar_time_max);
-		compute_path(flights, parameters.from, conference_to_home, parameters.ar_time_min, parameters.ar_time_max, parameters);
+		compute_path(flights, parameters.from, conference_to_home, parameters.ar_time_min, parameters.ar_time_max, parameters, alliances);
 		Travel best1 = find_cheapest(home_to_vacation, vacation_to_conference, conference_to_home, alliances);
 
 		/*
@@ -189,13 +191,13 @@ vector<Travel> play_hard(Flights& flights, Parameters& parameters, const Allianc
 		vector<Travel> home_to_conference, conference_to_vacation, vacation_to_home;
 		//compute the paths from home to conference
 		fill_travel(home_to_conference, flights, parameters.from, parameters.dep_time_min, parameters.dep_time_max);
-		compute_path(flights, parameters.to, home_to_conference, parameters.dep_time_min, parameters.dep_time_max, parameters);
+		compute_path(flights, parameters.to, home_to_conference, parameters.dep_time_min, parameters.dep_time_max, parameters, alliances);
 		//compute the paths from conference to vacation
 		fill_travel(conference_to_vacation, flights, parameters.to, parameters.ar_time_min, parameters.ar_time_max);
-		compute_path(flights, current_airport_of_interest, conference_to_vacation, parameters.ar_time_min, parameters.ar_time_max, parameters);
+		compute_path(flights, current_airport_of_interest, conference_to_vacation, parameters.ar_time_min, parameters.ar_time_max, parameters, alliances);
 		//compute paths from vacation to home
 		fill_travel(vacation_to_home, flights, current_airport_of_interest, parameters.ar_time_max+parameters.vacation_time_min, parameters.ar_time_max+parameters.vacation_time_max);
-		compute_path(flights, parameters.from, vacation_to_home, parameters.ar_time_max+parameters.vacation_time_min, parameters.ar_time_max+parameters.vacation_time_max, parameters);
+		compute_path(flights, parameters.from, vacation_to_home, parameters.ar_time_max+parameters.vacation_time_min, parameters.ar_time_max+parameters.vacation_time_max, parameters, alliances);
 		Travel best2 = find_cheapest(home_to_conference, conference_to_vacation, vacation_to_home, alliances);
 
 		float cost1 = best1.flights.size() ? compute_cost(best1, alliances) : INFINITY;
@@ -257,29 +259,33 @@ float compute_cost(const Travel & travel, const Alliances&alliances){
  * \param t_max You must not be in a plane after this value (epoch)
  * \param parameters The program parameters
  */
-void compute_path(const Flights& flights, Id to, vector<Travel>& final_travels, unsigned long t_min, unsigned long t_max, Parameters parameters){
+void compute_path(const Flights& flights, Id to, vector<Travel>& final_travels, unsigned long t_min, unsigned long t_max, const Parameters &parameters, const Alliances &alliances){
 	struct Segment {
 		const struct Segment *prev;
 		const Flight *flight;
-		float cost;
+		float prevTotalCost;
+		float totalCost;
+		float discount;
 	};
 
 	vector<const Segment *> allSegments; /* our way of doing malloc() and cleaning up */
 
-	queue<pair<float, const Segment *>> queue;
+	priority_queue<pair<float, const Segment *>> queue;
 
 	for (const Travel &travel : final_travels) {
 		Segment *s = new Segment();
 		s->prev = NULL;
 		s->flight = travel.flights.front();
-		s->cost = s->flight->cost;
+		s->prevTotalCost = 0;
+		s->totalCost = s->flight->cost;
+		s->discount = 1;
 		allSegments.push_back(s);
-		queue.push(pair<float, const Segment *>(s->cost, s));
+		queue.push(pair<float, const Segment *>(-s->totalCost, s));
 	}
 
 	vector<const Segment *> finalSegments;
 	while (!queue.empty()) {
-		const Segment *currentSegment = queue.front().second;
+		const Segment *currentSegment = queue.top().second;
 		queue.pop();
 
 		const Flight &currentFlight = *currentSegment->flight;
@@ -311,9 +317,20 @@ void compute_path(const Flights& flights, Id to, vector<Travel>& final_travels, 
 			Segment *s = new Segment();
 			s->prev = currentSegment;
 			s->flight = &flight;
-			s->cost = currentSegment->cost + s->flight->cost;
+
+			/* Compute cost */
+			float discount = 1;
+			if (flight.company == currentFlight.company)
+				discount = 0.7;
+			else if (company_are_in_a_common_alliance(flight.company, currentFlight.company, alliances))
+				discount = 0.8;
+
+			s->prevTotalCost = currentSegment->prevTotalCost + currentFlight.cost * min(discount, currentSegment->discount);
+			s->totalCost = s->prevTotalCost + flight.cost * discount;
+			s->discount = discount;
+
 			allSegments.push_back(s);
-			queue.push(make_pair<float, const Segment *>(0.0f, s));
+			queue.push(make_pair<float, const Segment *>(-s->totalCost, s));
 		}
 	}
 
@@ -327,6 +344,14 @@ void compute_path(const Flights& flights, Id to, vector<Travel>& final_travels, 
 		}
 		reverse(travel.flights.begin(), travel.flights.end());
 		final_travels.push_back(travel);
+		float cost = compute_cost(travel, alliances);
+		if (cost != s->totalCost)
+		{
+			fprintf(stderr, "Cost error: compute_cost %f, s->cost %f\n", cost, s->totalCost);
+			fprintf(stderr, "Cost error: compute_cost %X, s->cost %X\n", *(int*)&cost, *(int*)&s->totalCost);
+			print_travel(travel, alliances, cerr);
+			assert(0);
+		}
 	}
 
 	for (const Segment *s : allSegments) {
