@@ -65,31 +65,27 @@ depend: .depend
 	rm -f ./.depend
 	@$(foreach SRC, $(SRCS), $(COMPILER) $(FLAGS) -MT $(SRC:src/%.cpp=obj/%.o) -MM $(SRC) >> .depend;)
 
-test: release
-	rm -f scenarios/newinput/play_hard.txt
-	rm -f scenarios/newinput/work_hard.txt
-	scenarios/newinput/script.sh
-	diff -u scenarios/newinput/work_hard.txt.expected scenarios/newinput/work_hard.txt
-	diff -u scenarios/newinput/play_hard.txt.expected scenarios/newinput/play_hard.txt
-	rm -f scenarios/newinput/play_hard.txt
-	rm -f scenarios/newinput/work_hard.txt
+run-tests: release
+	rm -f tests/*/*.out
+	for TEST in $(TESTS); do \
+		tput setaf 4; \
+		echo Running $$TEST; \
+		tput sgr 0; \
+		/usr/bin/time --output=tests/$$TEST/time.out -f "%E real, %U user, %S sys" \
+			tests/$$TEST/script.sh \
+			-flights tests/$$TEST/flights.txt \
+			-alliances tests/$$TEST/alliances.txt \
+			-work_hard_file tests/$$TEST/work_hard.out \
+			-play_hard_file tests/$$TEST/play_hard.out ; \
+		tput setaf 2; \
+		cat tests/$$TEST/time.out; \
+		tput setaf 1; \
+		diff -u tests/$$TEST/work_hard.txt tests/$$TEST/work_hard.out; \
+		diff -u tests/$$TEST/play_hard.txt tests/$$TEST/play_hard.out; \
+		tput sgr0; \
+	done
 
-test2: release
-	rm -f scenarios/newinput2/play_hard.txt
-	rm -f scenarios/newinput2/work_hard.txt
-	scenarios/newinput2/script.sh
-	diff -u scenarios/newinput2/work_hard.txt.expected scenarios/newinput2/work_hard.txt
-	diff -u scenarios/newinput2/play_hard.txt.expected scenarios/newinput2/play_hard.txt
-	rm -f scenarios/newinput2/play_hard.txt
-	rm -f scenarios/newinput2/work_hard.txt
-
-test3: release
-	rm -f scenarios/newinput3/play_hard.txt
-	rm -f scenarios/newinput3/work_hard.txt
-	scenarios/newinput3/script.sh
-	diff -u scenarios/newinput3/work_hard.txt.expected scenarios/newinput3/work_hard.txt
-	diff -u scenarios/newinput3/play_hard.txt.expected scenarios/newinput3/play_hard.txt
-	rm -f scenarios/newinput3/play_hard.txt
-	rm -f scenarios/newinput3/work_hard.txt
+test:
+	make run-tests TESTS="correctness1 scalability1 scalability2 scalability3"
 
 include .depend	
