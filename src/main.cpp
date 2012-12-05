@@ -28,10 +28,13 @@ void timeme(const char *file, int line, const char *func)
 	struct timeval now, diff;
 
 	gettimeofday(&now, NULL);
-	timersub(&now, &last, &diff);
+	if (last.tv_sec != 0)
+		timersub(&now, &last, &diff);
+	else
+		diff = { 0, 0 };
 	last = now;
 
-	fprintf(stderr, "+%6ld.%06ld %s:%d %s\n", diff.tv_sec, diff.tv_usec, file, line, func);
+	fprintf(stderr, "+%2ld.%06ld %s:%d %s\n", diff.tv_sec, diff.tv_usec, file, line, func);
 }
 
 using namespace std;
