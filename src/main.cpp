@@ -14,6 +14,7 @@
 #include <vector>
 #include <fstream>
 #include <sys/time.h>
+#include <string.h>
 #include <time.h>
 #include <unordered_map>
 #include <queue>
@@ -114,7 +115,7 @@ void parse_flight(Flight& flight, string& line);
 float parse_flights(Flights& flights, string filename);
 void parse_alliance(Alliances &alliance, string line);
 void parse_alliances(Alliances &alliances, string filename);
-bool company_are_in_a_common_alliance(Id c1, Id c2, const Alliances& alliances);
+bool inline company_are_in_a_common_alliance(Id c1, Id c2, const Alliances& alliances);
 bool has_just_traveled_with_company(const Flight& flight_before, const Flight& current_flight);
 bool has_just_traveled_with_alliance(const Flight& flight_before, const Flight& current_flight, const Alliances& alliances);
 vector<float> apply_discount(const Travel & travel, const Alliances&alliances);
@@ -865,6 +866,7 @@ void output_work_hard(Flights& flights, Parameters& parameters, const Alliances&
 }
 
 int main(int argc, char **argv) {
+	TIMEME;
 	//Declare variables and read the args
 	Parameters parameters;
 	Alliances alliances;
@@ -872,15 +874,20 @@ int main(int argc, char **argv) {
 //	cout<<"Printing parameters..."<<endl;
 //	print_params(parameters);
 	Flights flights;
+	TIMEME;
 	parameters.highestCost = parse_flights(flights, parameters.flights_file);
+	TIMEME;
 //	cout<<"Printing flights..."<<endl;
 //	print_flights(flights);
 //	cout<<"flights printed "<<endl;
 	parse_alliances(alliances, parameters.alliances_file);
 //	cout<<"Printing alliances..."<<endl;
 //	print_alliances(alliances);
+	TIMEME;
 	output_play_hard(flights, parameters, alliances);
+	TIMEME;
 	output_work_hard(flights, parameters, alliances);
+	TIMEME;
 }
 
 //./run -from Paris -to Los\ Angeles -departure_time_min 11152012000000 -departure_time_max 11172012000000 -arrival_time_min 11222012000000 -arrival_time_max 11252012000000 -max_layover 100000 -vacation_time_min 432000 -vacation_time_max 604800 -vacation_airports Rio London Chicago -flights flights.txt -alliances alliances.txt
