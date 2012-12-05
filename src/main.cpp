@@ -104,7 +104,7 @@ struct Alliances{
 
 time_t convert_string_to_timestamp(const string &s);
 void print_params(Parameters &parameters);
-void print_flight(const Flight& flight, float discount, ofstream& output);
+void print_flight(const Flight& flight, float discount, ostream& output);
 void read_parameters(Parameters& parameters, int argc, char **argv);
 void split_string(vector<string>& result, string line, char separator);
 void parse_flight(Flight& flight, string& line);
@@ -117,10 +117,9 @@ bool has_just_traveled_with_alliance(const Flight& flight_before, const Flight& 
 vector<float> apply_discount(const Travel & travel, const Alliances&alliances);
 float compute_cost(const Travel & travel, const Alliances&alliances);
 void print_alliances(const Alliances &alliances);
-void print_flights(const vector<Flight>& flights, const vector<float>& discounts, ofstream& output);
+void print_flights(const vector<Flight>& flights, const vector<float>& discounts, ostream& output);
 bool never_traveled_to(Travel travel, Id city);
-void print_travel(const Travel& travel, const Alliances&alliances);
-void compute_path(const Flights& flights, Id to, vector<Travel>& travels, unsigned long t_min, unsigned long t_max, Parameters parameters);
+void print_travel(const Travel& travel, const Alliances&alliances, ostream& output);
 Travel find_cheapest(const vector<Travel>& flights, const Alliances& alliances);
 Travel find_cheapest(const vector<Travel>& inbounds, const vector<Travel>& outbounds, const Alliances&alliances);
 Travel find_cheapest(const vector<Travel>& inbounds, const vector<Travel>& vias, const vector<Travel>& outbounds, const Alliances&alliances);
@@ -528,10 +527,10 @@ void print_params(Parameters &parameters){
 }
 
 /**
- * \fn void print_flight(const Flight& flight, ofstream& output)
+ * \fn void print_flight(const Flight& flight, ostream& output)
  * \brief You can use this function to display a flight
  */
-void print_flight(const Flight& flight, float discount, ofstream& output){
+void print_flight(const Flight& flight, float discount, ostream& output){
 	struct tm * take_off_t, *land_t;
 	take_off_t = gmtime(((const time_t*)&(flight.take_off_time)));
 	output<<getName(flight.company)<<"-";
@@ -734,11 +733,11 @@ void print_alliances(const Alliances &alliances){
 }
 
 /**
- * \fn void print_flights(vector<Flight>& flights, ofstream& output)
+ * \fn void print_flights(vector<Flight>& flights, ostream& output)
  * \brief Display the flights on the standard output.
  * \param flights The flights.
  */
-void print_flights(const vector<const Flight *>& flights, const vector<float> &discounts, ofstream& output){
+void print_flights(const vector<const Flight *>& flights, const vector<float> &discounts, ostream& output){
 	for(unsigned int i=0; i<flights.size(); i++)
 		print_flight(*flights[i], discounts[i], output);
 }
@@ -763,7 +762,7 @@ bool never_traveled_to(Travel travel, Id city){
  * \param travel The travel.
  * \param alliances The alliances (used to compute the price).
  */
-void print_travel(const Travel& travel, const Alliances&alliances, ofstream& output){
+void print_travel(const Travel& travel, const Alliances&alliances, ostream& output){
 	vector<float> discounts = apply_discount(travel, alliances);
 	output<<"Price : "<<compute_cost(travel, alliances)<<endl;
 	print_flights(travel.flights, discounts, output);
