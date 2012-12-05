@@ -71,6 +71,12 @@ run-tests: release
 		tput setaf 4; \
 		echo Running $$TEST; \
 		tput sgr 0; \
+		echo /usr/bin/time --output=tests/$$TEST/time.out -f "%E real, %U user, %S sys" \
+			tests/$$TEST/script.sh \
+			-flights tests/$$TEST/flights.txt \
+			-alliances tests/$$TEST/alliances.txt \
+			-work_hard_file tests/$$TEST/work_hard.out \
+			-play_hard_file tests/$$TEST/play_hard.out ; \
 		/usr/bin/time --output=tests/$$TEST/time.out -f "%E real, %U user, %S sys" \
 			tests/$$TEST/script.sh \
 			-flights tests/$$TEST/flights.txt \
