@@ -1,4 +1,12 @@
+# Generated during build
 .depend
 obj
 run
+
+# Generated during testing
 *.out
+
+# Generated documentation
+html
+latex
+
