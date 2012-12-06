@@ -42,7 +42,21 @@ public:
 
 	typedef std::multimap<Time, Flight> AirportSchedule; //!< Type of index for fast retrieval of flights given a time interval
 	typedef std::unordered_map<Airport, AirportSchedule> Index; //!< Type of index for fast retrievel of flights given an airport
-	typedef typename AirportSchedule::iterator Iterator; //!< Type of iterator pointing to one flight
+
+	//! Type of iterator pointing to one flight
+	class Iterator {
+	public:
+		//! Indirection operator
+		const Flight &operator*() const { return it->second; }
+		//! Forward operator
+		void operator++() { it++; }
+		//! Non-equality operator
+		bool operator!=(const Iterator &other) const { return this->it != other->id; }
+		//! Equality operator
+		bool operator==(const Iterator &other) const { return this->it == other->id; }
+	private:
+		typename AirportSchedule::iterator it; //!< Underlying iterator
+	};
 	typedef std::pair<Iterator, Iterator> Range; //!< Type of range of flights
 
 	/*!
@@ -79,6 +93,13 @@ public:
 private:
 	Index takeoffsSchedule; //!< Flights index by airport, then by takeoff time
 	Index landingsSchedule; //!< Flights index by airport, then by landing time
+};
+
+namespace std {
+
+Flights<>::Iterator begin(const Flights<>::Range &range) { return range.first; }
+Flights<>::Iterator end(const Flights<>::Range &range) { return range.second; }
+
 };
 
 #endif /* FLIGHTS_HH */
