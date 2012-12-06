@@ -44,7 +44,7 @@ using namespace std;
 UniqueId<> g_ids;
 typedef UniqueId<>::Id Id;
 typedef UniqueId<>::Name Name;
-Id inline getId(Name s) { return g_ids.getId(s); }
+Id inline getId(const Name &s) { return g_ids.getId(s); }
 Name inline getName(Id id) { return g_ids.getName(id); }
 
 /**

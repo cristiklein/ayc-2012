@@ -12,18 +12,24 @@ public:
 	typedef _Id Id;
 	typedef _Name Name;
 
-	Id getId(Name s)
+	UniqueId()
 	{
-		/* Check if Id is already registered */
-		auto it = nameToId.find(s);
-		if (it != std::end(nameToId))
-			return it->second;
+		/* Id zero is special */
+		idToName.emplace_back("");
+	}
+
+	Id getId(const Name &s)
+	{
+		Id &id = nameToId[s];
 
 		/* Not found, add */
-		Id newId = idToName.size();
-		idToName.push_back(s);
-		nameToId[s] = newId;
-		return newId;
+		if (id == 0)
+		{
+			Id newId = idToName.size();
+			idToName.emplace_back(s);
+			id = newId;
+		}
+		return id;
 	}
 
 	Name getName(Id id)
