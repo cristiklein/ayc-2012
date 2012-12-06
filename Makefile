@@ -94,6 +94,7 @@ run-tests: release
 unit-tests:
 	mkdir -p obj
 	g++ $(FLAGS) src/test_UniqueId.cc -o obj/test_UniqueId && obj/test_UniqueId
+	g++ $(FLAGS) src/test_Alliances.cc -o obj/test_Alliances && obj/test_Alliances
 
 test:
 	make run-tests TESTS="correctness1 scalability1 scalability2 scalability3"
