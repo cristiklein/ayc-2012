@@ -46,6 +46,9 @@ public:
 	//! Type of iterator pointing to a const flight
 	class Iterator {
 	public:
+		//! Construct an iterator to nothing (useful for an empty range)
+		Iterator() { /* nothing */ }
+		//! Construct an iterator backed up by an AirportSchedule iterator
 		Iterator(typename AirportSchedule::const_iterator &it) : it(it) { /* nothing */ }
 		//! Indirection operator
 		const Flight &operator*() const { return it->second; }
@@ -74,7 +77,10 @@ public:
 	 */
 	Range takeoffs(Airport airport, Time tMin, Time tMax) const
 	{
-		const auto &takeoffsFromAirport = takeoffsSchedule.at(airport);
+		auto it = takeoffsSchedule.find(airport);
+		if (it == std::end(takeoffsSchedule))
+			return { Iterator(), Iterator() };
+		const auto &takeoffsFromAirport = it->second;
 		typename AirportSchedule::const_iterator lower = takeoffsFromAirport.lower_bound(tMin);
 		typename AirportSchedule::const_iterator upper = takeoffsFromAirport.upper_bound(tMax);
 		return { lower, upper };
@@ -85,7 +91,10 @@ public:
 	 */
 	Range landings(Airport airport, Time tMin, Time tMax) const
 	{
-		const auto &landingsOnAirport = landingsSchedule.at(airport);
+		auto it = landingsSchedule.find(airport);
+		if (it == std::end(landingsSchedule))
+			return { Iterator(), Iterator() };
+		const AirportSchedule &landingsOnAirport = it->second;
 		typename AirportSchedule::const_iterator lower = landingsOnAirport.lower_bound(tMin);
 		typename AirportSchedule::const_iterator upper = landingsOnAirport.upper_bound(tMax);
 		return { lower, upper };
