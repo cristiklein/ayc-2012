@@ -33,8 +33,8 @@ private:
 	typedef union {
 		struct {
 			Id id1, id2;
-		};
-		IdPair id;
+		}; //!< identifiers
+		IdPair id; //!< identifier-pair
 	} IdsToIdPair;
 
 	std::unordered_set<IdPair> alliances; //!< Stores the set of identifier-pairs which are allied
