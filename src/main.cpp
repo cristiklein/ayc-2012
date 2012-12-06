@@ -18,34 +18,23 @@
 #include <time.h>
 #include <unordered_map>
 #include <queue>
+#include <vector>
 
+#include "Alliances.hh"
+#include "Flights.hh"
+#include "TimeMe.hh"
 #include "UniqueId.hh"
 
-#define TIMEME \
-	timeme(__FILE__, __LINE__, __func__);
-
-void timeme(const char *file, int line, const char *func)
-{
-	static struct timeval last;
-	struct timeval now, diff;
-
-	gettimeofday(&now, NULL);
-	if (last.tv_sec != 0)
-		timersub(&now, &last, &diff);
-	else
-		diff = { 0, 0 };
-	last = now;
-
-	fprintf(stderr, "+%2ld.%06ld %s:%d %s\n", diff.tv_sec, diff.tv_usec, file, line, func);
-}
+namespace Planner {
 
 using namespace std;
 
-UniqueId<> g_ids;
-typedef UniqueId<>::Id Id;
-typedef UniqueId<>::Name Name;
-Id inline getId(const Name &s) { return g_ids.getId(s); }
-Name inline getName(Id id) { return g_ids.getName(id); }
+/* Instantiate templates */
+typedef ::Alliances<> Alliances;
+typedef ::Flight<> Flight;
+typedef ::Flights<> Flights;
+typedef ::UniqueId<>::Id Id;
+typedef ::UniqueId<>::Name Name;
 
 /**
  * \struct Parameters
@@ -69,25 +58,8 @@ struct Parameters{
 	string play_hard_file;/*!< The file used to output the play hard result. */
 	int nb_threads;/*!< The maximum number of worker threads */
 
-	float highestCost;/*!< The cost of the most expensive flight. Used for pruning */
+	float highestCost;
 };
-
-/**
- * \struct Flight
- * \brief Store a single flight data.
- *This structure don't need to be modified but feel free to change it if you want.
- */
-struct Flight{
-	Id id;/*!< Unique id of the flight. */
-	Id from;/*!< City where you take off. */
-	Id to;/*!< City where you land. */
-	unsigned long take_off_time;/*!< Take off time (epoch). */
-	unsigned long land_time;/*!< Land time (epoch). */
-	Id company;/*!< The company's name. */
-	float cost;/*!< The cost of the flight. */
-};
-
-typedef unordered_map<Id, multimap<unsigned long, Flight>> Flights; /* ordered by take_off_time */
 
 /**
  * \struct Travel
@@ -96,14 +68,6 @@ typedef unordered_map<Id, multimap<unsigned long, Flight>> Flights; /* ordered b
  */
 struct Travel{
 	vector<const Flight *> flights;/*!< A travel is just a list of Flight(s). */
-};
-
-/**
- * \struct Alliances
- * \brief Store whether two companies are in the same alliance
- */
-struct Alliances{
-	set<pair<Id, Id>> areAllied;
 };
 
 time_t convert_string_to_timestamp(const string &s);
@@ -224,10 +188,10 @@ vector<float> apply_discount(const Travel & travel, const Alliances &alliances){
 	for(unsigned int i=1; i<travel.flights.size(); i++){
 		const Flight& flight_before = *travel.flights[i-1];
 		const Flight& current_flight = *travel.flights[i];
-		if (has_just_traveled_with_company(flight_before, current_flight)){
+		if (flight_before.company == current_flight.company){
 			discounts[i-1] = 0.7;
 			discounts[i  ] = 0.7;
-		}else if(has_just_traveled_with_alliance(flight_before, current_flight, alliances)){
+		}else if(alliances.areAllied(flight_before.company, current_flight.company)){
 			if(discounts[i-1] > 0.8)
 				discounts[i-1] = 0.8;
 			discounts[i] = 0.8;
@@ -304,15 +268,9 @@ void compute_path(const Flights& flights, Id to, vector<Travel>& final_travels, 
 			continue;
 		}
 
-		auto itFlightsFromCurrentCity = flights.find(currentFlight.to);
-		if (itFlightsFromCurrentCity == flights.end())
-			continue;
-		const multimap<unsigned long, Flight> &flightFromCurrentCity = itFlightsFromCurrentCity->second;
-		auto itlo = flightFromCurrentCity.lower_bound(currentFlight.land_time);
-		auto itup = flightFromCurrentCity.upper_bound(currentFlight.land_time + parameters.max_layover_time);
-		for(auto it = itlo; it != itup; it++){
-			const Flight &flight = it->second;
-			if (flight.land_time > t_max) continue;
+		auto range = flights.takeoffs(currentFlight.to, currentFlight.landingTime, currentFlight.landingTime + parameters.max_layover_time);
+		for(const Flight &flight : range) {
+			if (flight.landingTime > t_max) continue;
 
 			bool wasHereBefore = false;
 			for (const Segment *s = currentSegment; s != NULL; s = s->prev)
@@ -331,7 +289,7 @@ void compute_path(const Flights& flights, Id to, vector<Travel>& final_travels, 
 			float discount = 1;
 			if (flight.company == currentFlight.company)
 				discount = 0.7;
-			else if (company_are_in_a_common_alliance(flight.company, currentFlight.company, alliances))
+			else if (alliances.areAllied(flight.company, currentFlight.company))
 				discount = 0.8;
 
 			s->prevTotalCost = currentSegment->prevTotalCost + currentFlight.cost * min(discount, currentSegment->discount);
@@ -353,14 +311,6 @@ void compute_path(const Flights& flights, Id to, vector<Travel>& final_travels, 
 		}
 		reverse(travel.flights.begin(), travel.flights.end());
 		final_travels.push_back(travel);
-		float cost = compute_cost(travel, alliances);
-		if (cost != s->totalCost)
-		{
-			fprintf(stderr, "Cost error: compute_cost %f, s->cost %f\n", cost, s->totalCost);
-			fprintf(stderr, "Cost error: compute_cost %X, s->cost %X\n", *(int*)&cost, *(int*)&s->totalCost);
-			print_travel(travel, alliances, cerr);
-			assert(0);
-		}
 	}
 
 	for (const Segment *s : allSegments) {
@@ -401,45 +351,14 @@ Travel find_cheapest(const vector<Travel>& travels, const Alliances&alliances){
  * \param t_min You must not be in a plane before this value (epoch).
  * \param t_max You must not be in a plane after this value (epoch).
  */
-void fill_travel(vector<Travel>& travels, const Flights& flights, Id starting_point, unsigned long t_min, unsigned long t_max){
-	auto itFlightsFromCurrentCity = flights.find(starting_point);
-	if (itFlightsFromCurrentCity == flights.end())
-		return;
-	const multimap<unsigned long, Flight> &flightFromCurrentCity = itFlightsFromCurrentCity->second;
-	auto itlo = flightFromCurrentCity.lower_bound(t_min);
-	auto itup = flightFromCurrentCity.end();
-	for(auto it = itlo; it != itup; it++){
-		const Flight &flight = it->second;
-		if(flight.land_time <= t_max){
+void fill_travel(vector<Travel>& travels, const Flights& flights, Id from, unsigned long t_min, unsigned long t_max){
+	for(const Flight &flight : flights.takeoffs(from, t_min, t_max)) {
+		if(flight.landingTime <= t_max){
 			Travel t;
 			t.flights.push_back(&flight);
 			travels.push_back(t);
 		}
 	}
-}
-
-/**
- * \fn void merge_path(vector<Travel>& travel1, vector<Travel>& travel2)
- * \brief Merge the travel1 with the travel2 and put the result in the travel1.
- * \param travel1 The first part of the trip.
- * \param travel2 The second part of the trip.
- */
-void merge_path(vector<Travel>& travel1, vector<Travel>& travel2){
-	vector<Travel> result;
-	for(unsigned int i=0; i<travel1.size(); i++){
-		Travel t1 = travel1[i];
-		for(unsigned j=0; j<travel2.size(); j++){
-			Travel t2 = travel2[j];
-			const Flight &last_flight_t1 = *t1.flights.back();
-			const Flight &first_flight_t2 = *t2.flights[0];
-			if(last_flight_t1.land_time < first_flight_t2.take_off_time){
-				Travel new_travel = t1;
-				new_travel.flights.insert(new_travel.flights.end(), t2.flights.begin(), t2.flights.end());
-				result.push_back(new_travel);
-			}
-		}
-	}
-	travel1 = result;
 }
 
 Travel find_cheapest(const vector<Travel> &inbounds, const vector<Travel> &outbounds, const Alliances &alliances) {
@@ -585,14 +504,14 @@ void print_params(Parameters &parameters){
  * \fn void print_flight(const Flight& flight, ostream& output)
  * \brief You can use this function to display a flight
  */
-void print_flight(const Flight& flight, float discount, ostream& output){
+void print_flight(const UniqueId<> &uniqueId, const Flight& flight, float discount, ostream& output){
 	struct tm * take_off_t, *land_t;
-	take_off_t = gmtime(((const time_t*)&(flight.take_off_time)));
-	output<<getName(flight.company)<<"-";
-	output<<""<<getName(flight.id)<<"-";
-	output<<getName(flight.from)<<" ("<<(take_off_t->tm_mon+1)<<"/"<<take_off_t->tm_mday<<" "<<take_off_t->tm_hour<<"h"<<take_off_t->tm_min<<"min"<<")"<<"/";
-	land_t = gmtime(((const time_t*)&(flight.land_time)));
-	output<<getName(flight.to)<<" ("<<(land_t->tm_mon+1)<<"/"<<land_t->tm_mday<<" "<<land_t->tm_hour<<"h"<<land_t->tm_min<<"min"<<")-";
+	take_off_t = gmtime(((const time_t*)&(flight.takeoffTime)));
+	output<<uniqueId.getName(flight.company)<<"-";
+	output<<""<<uniqueId.getName(flight.id)<<"-";
+	output<<uniqueId.getName(flight.from)<<" ("<<(take_off_t->tm_mon+1)<<"/"<<take_off_t->tm_mday<<" "<<take_off_t->tm_hour<<"h"<<take_off_t->tm_min<<"min"<<")"<<"/";
+	land_t = gmtime(((const time_t*)&(flight.landingTime)));
+	output<<uniqueId.getName(flight.to)<<" ("<<(land_t->tm_mon+1)<<"/"<<land_t->tm_mday<<" "<<land_t->tm_hour<<"h"<<land_t->tm_min<<"min"<<")-";
 	output<<flight.cost<<"$"<<"-"<<discount*100<<"%"<<endl;
 
 }
@@ -602,17 +521,17 @@ void print_flight(const Flight& flight, float discount, ostream& output){
  * \brief This function is used to read the parameters
  * \param parameters Represents the structure that will be filled with the parameters.
  */
-void read_parameters(Parameters& parameters, int argc, char **argv){
+void read_parameters(UniqueId<> &uniqueId, Parameters& parameters, int argc, char **argv){
 	for(int i=0; i<argc; i++){
 		string current_parameter = argv[i];
 		if(current_parameter == "-from"){
-			parameters.from = getId(argv[++i]);
+			parameters.from = uniqueId.getId(argv[++i]);
 		}else if(current_parameter == "-arrival_time_min"){
 			parameters.ar_time_min = convert_string_to_timestamp(argv[++i]);
 		}else if(current_parameter == "-arrival_time_max"){
 			parameters.ar_time_max = convert_string_to_timestamp(argv[++i]);
 		}else if(current_parameter == "-to"){
-			parameters.to = getId(argv[++i]);
+			parameters.to = uniqueId.getId(argv[++i]);
 		}else if(current_parameter == "-departure_time_min"){
 			parameters.dep_time_min = convert_string_to_timestamp(argv[++i]);
 		}else if(current_parameter == "-departure_time_max"){
@@ -625,7 +544,7 @@ void read_parameters(Parameters& parameters, int argc, char **argv){
 			parameters.vacation_time_max = atol(argv[++i]);
 		}else if(current_parameter == "-vacation_airports"){
 			while(i+1 < argc && argv[i+1][0] != '-'){
-				parameters.airports_of_interest.push_back(getId(argv[++i]));
+				parameters.airports_of_interest.push_back(uniqueId.getId(argv[++i]));
 			}
 		}else if(current_parameter == "-flights"){
 			parameters.flights_file = argv[++i];
@@ -664,17 +583,17 @@ void split_string(vector<string>& result, string line, char separator){
  * \param flights The vector of flights.
  * \param line The line that must be parsed.
  */
-void parse_flight(Flight& flight, string& line){
+void parse_flight(UniqueId<> &uniqueId, Flight& flight, string& line){
 	vector<string> splittedLine;
 	split_string(splittedLine, line, ';');
 	if(splittedLine.size() == 7){
-		flight.id = getId(splittedLine[0]);
-		flight.from = getId(splittedLine[1]);
-		flight.take_off_time = convert_string_to_timestamp(splittedLine[2]);
-		flight.to = getId(splittedLine[3]);
-		flight.land_time = convert_string_to_timestamp(splittedLine[4]);
+		flight.id = uniqueId.getId(splittedLine[0]);
+		flight.from = uniqueId.getId(splittedLine[1]);
+		flight.takeoffTime = convert_string_to_timestamp(splittedLine[2]);
+		flight.to = uniqueId.getId(splittedLine[3]);
+		flight.landingTime = convert_string_to_timestamp(splittedLine[4]);
 		flight.cost = atof(splittedLine[5].c_str());
-		flight.company = getId(splittedLine[6]);
+		flight.company = uniqueId.getId(splittedLine[6]);
 	}
 }
 
@@ -684,7 +603,7 @@ void parse_flight(Flight& flight, string& line){
  * \param flights The vector of flights.
  * \param filename The name of the file containing the flights.
  */
-float parse_flights(Flights& flights, string filename){
+float parse_flights(UniqueId<> &uniqueId, Flights& flights, string filename){
 	string line = "";
 	ifstream file;
 	file.open(filename.c_str());
@@ -698,8 +617,8 @@ float parse_flights(Flights& flights, string filename){
 	{
 		Flight flight;
 		getline(file, line);
-		parse_flight(flight, line);
-		flights[flight.from].insert({{flight.take_off_time, flight}});
+		parse_flight(uniqueId, flight, line);
+		flights.add(flight);
 		highestCost = max(highestCost, flight.cost);
 	}
 	return highestCost;
@@ -711,18 +630,17 @@ float parse_flights(Flights& flights, string filename){
  * \param alliance A vector of companies sharing a same alliance.
  * \param line A line that contains the name of companies in the same alliance.
  */
-void parse_alliance(Alliances &alliances, string line){
+void parse_alliance(UniqueId<> &uniqueId, Alliances &alliances, string line){
 	vector<string> splittedLine;
 	split_string(splittedLine, line, ';');
 	for(unsigned int i=0; i<splittedLine.size(); i++)
 	for(unsigned int j=i+1; j<splittedLine.size(); j++){
-		Id c1 = getId(splittedLine[i]);
-		Id c2 = getId(splittedLine[j]);
+		Id c1 = uniqueId.getId(splittedLine[i]);
+		Id c2 = uniqueId.getId(splittedLine[j]);
 		if (c1 == c2)
 			continue;
 
-		alliances.areAllied.insert(pair<Id,Id>(c1,c2));
-		alliances.areAllied.insert(pair<Id,Id>(c2,c1));
+		alliances.add(c1, c2);
 	}
 }
 
@@ -732,7 +650,7 @@ void parse_alliance(Alliances &alliances, string line){
  * \param alliances A 2D vector representing the alliances. Companies on the same line are in the same alliance.
  * \param filename The name of the file containing the alliances description.
  */
-void parse_alliances(Alliances &alliances, string filename){
+void parse_alliances(UniqueId<> &uniqueId, Alliances &alliances, string filename){
 	string line = "";
 	ifstream file;
 
@@ -744,51 +662,8 @@ void parse_alliances(Alliances &alliances, string filename){
 	while (!file.eof())
 	{
 		getline(file, line);
-		parse_alliance(alliances, line);
+		parse_alliance(uniqueId, alliances, line);
 	}
-}
-
-/**
- * \fn bool company_are_in_a_common_alliance(Id c1, Id c2, const Alliances& alliances)
- * \brief Check if 2 companies are in the same alliance.
- * \param c1 The first company's name.
- * \param c2 The second company's name.
- * \param alliances A 2D vector representing the alliances. Companies on the same line are in the same alliance.
- */
-bool company_are_in_a_common_alliance(Id c1, Id c2, const Alliances& alliances){
-	return alliances.areAllied.count(pair<Id,Id>(c1,c2)) != 0;
-}
-
-/**
- * \fn bool has_just_traveled_with_company(vector<Flight>& flights_before, Flight& current_flight)
- * \brief The 2 last flights are with the same company.
- * \param flight_before The first flight.
- * \param current_flight The second flight.
- * \return The 2 flights are with the same company
- */
-bool has_just_traveled_with_company(const Flight& flight_before, const Flight& current_flight){
-	return flight_before.company == current_flight.company;
-}
-
-/**
- * \fn bool has_just_traveled_with_alliance(Flight& flight_before, Flight& current_flight, vector<vector<string> >& alliances)
- * \brief The 2 last flights are with the same alliance.
- * \param flight_before The first flight.
- * \param current_flight The second flight.
- * \param alliances The alliances.
- * \return The 2 flights are with the same alliance.
- */
-bool has_just_traveled_with_alliance(const Flight& flight_before, const Flight& current_flight, const Alliances& alliances){
-	return company_are_in_a_common_alliance(current_flight.company, flight_before.company, alliances);
-}
-
-/**
- * \fn void print_alliances(vector<vector<string> > &alliances)
- * \brief Display the alliances on the standard output.
- * \param alliances The alliances.
- */
-void print_alliances(const Alliances &alliances){
-	cout<<"Alliance: NOT implemented"<<endl;
 }
 
 /**
@@ -796,23 +671,9 @@ void print_alliances(const Alliances &alliances){
  * \brief Display the flights on the standard output.
  * \param flights The flights.
  */
-void print_flights(const vector<const Flight *>& flights, const vector<float> &discounts, ostream& output){
+void print_flights(const UniqueId<> &uniqueId, const vector<const Flight *>& flights, const vector<float> &discounts, ostream& output){
 	for(unsigned int i=0; i<flights.size(); i++)
-		print_flight(*flights[i], discounts[i], output);
-}
-
-/**
- * \fn bool never_traveled_to(Travel travel, Id city)
- * \brief Indicates if the city has already been visited in the travel. This function is used to avoid stupid loops.
- * \param travel The travels.
- * \apram city The city.
- * \return The current travel has never visited the given city.
- */
-bool never_traveled_to(Travel travel, Id city){
-	for(unsigned int i=0; i<travel.flights.size(); i++)
-		if(travel.flights[i]->from == city || travel.flights[i]->to == city)
-			return false;
-	return true;
+		print_flight(uniqueId, *flights[i], discounts[i], output);
 }
 
 /**
@@ -821,10 +682,10 @@ bool never_traveled_to(Travel travel, Id city){
  * \param travel The travel.
  * \param alliances The alliances (used to compute the price).
  */
-void print_travel(const Travel& travel, const Alliances&alliances, ostream& output){
+void print_travel(const UniqueId<> &uniqueId, const Travel& travel, const Alliances&alliances, ostream& output){
 	vector<float> discounts = apply_discount(travel, alliances);
 	output<<"Price : "<<compute_cost(travel, alliances)<<endl;
-	print_flights(travel.flights, discounts, output);
+	print_flights(uniqueId, travel.flights, discounts, output);
 	output<<endl;
 }
 
@@ -835,14 +696,14 @@ void print_travel(const Travel& travel, const Alliances&alliances, ostream& outp
  * \param parameters The parameters.
  * \param alliances The alliances between companies.
  */
-void output_play_hard(Flights& flights, Parameters& parameters, const Alliances& alliances){
+void output_play_hard(const UniqueId<> &uniqueId, Flights& flights, Parameters& parameters, const Alliances& alliances){
 	ofstream output;
 	output.open(parameters.play_hard_file.c_str());
 	vector<Travel> travels = play_hard(flights, parameters, alliances);
 	list<Id> cities = parameters.airports_of_interest;
 	for(unsigned int i=0; i<travels.size(); i++){
-		output<<"“Play Hard” Proposition "<<(i+1)<<" : "<<getName(cities.front())<<endl;
-		print_travel(travels[i], alliances, output);
+		output<<"“Play Hard” Proposition "<<(i+1)<<" : "<<uniqueId.getName(cities.front())<<endl;
+		print_travel(uniqueId, travels[i], alliances, output);
 		cities.pop_front();
 		output<<endl;
 	}
@@ -856,38 +717,51 @@ void output_play_hard(Flights& flights, Parameters& parameters, const Alliances&
  * \param parameters The parameters.
  * \param alliances The alliances between companies.
  */
-void output_work_hard(Flights& flights, Parameters& parameters, const Alliances& alliances){
+void output_work_hard(const UniqueId<> &uniqueId, Flights& flights, Parameters& parameters, const Alliances& alliances){
 	ofstream output;
 	output.open(parameters.work_hard_file.c_str());
 	Travel travel = work_hard(flights, parameters, alliances);
 	output<<"“Work Hard” Proposition :"<<endl;
-	print_travel(travel, alliances, output);
+	print_travel(uniqueId, travel, alliances, output);
 	output.close();
 }
 
+} /* namespace Planner */
+
 int main(int argc, char **argv) {
-	TIMEME;
+	using Planner::Alliances;
+	using Planner::Flights;
+	using Planner::Parameters;
+	using Planner::parse_alliances;
+	using Planner::read_parameters;
+	using Planner::parse_flights;
+
+	UniqueId<> uniqueId;
+
+	timeMe("start");
 	//Declare variables and read the args
 	Parameters parameters;
 	Alliances alliances;
-	read_parameters(parameters, argc, argv);
+	read_parameters(uniqueId, parameters, argc, argv);
 //	cout<<"Printing parameters..."<<endl;
 //	print_params(parameters);
 	Flights flights;
-	TIMEME;
-	parameters.highestCost = parse_flights(flights, parameters.flights_file);
-	TIMEME;
+	timeMe("parse params");
+	parameters.highestCost = parse_flights(uniqueId, flights, parameters.flights_file);
+	timeMe("parse flights");
 //	cout<<"Printing flights..."<<endl;
 //	print_flights(flights);
 //	cout<<"flights printed "<<endl;
-	parse_alliances(alliances, parameters.alliances_file);
+	parse_alliances(uniqueId, alliances, parameters.alliances_file);
 //	cout<<"Printing alliances..."<<endl;
 //	print_alliances(alliances);
-	TIMEME;
-	output_play_hard(flights, parameters, alliances);
-	TIMEME;
-	output_work_hard(flights, parameters, alliances);
-	TIMEME;
+	timeMe("parse alliances");
+	output_play_hard(uniqueId, flights, parameters, alliances);
+	timeMe("play hard");
+	output_work_hard(uniqueId, flights, parameters, alliances);
+	timeMe("work hard");
+
+	return 0;
 }
 
-//./run -from Paris -to Los\ Angeles -departure_time_min 11152012000000 -departure_time_max 11172012000000 -arrival_time_min 11222012000000 -arrival_time_max 11252012000000 -max_layover 100000 -vacation_time_min 432000 -vacation_time_max 604800 -vacation_airports Rio London Chicago -flights flights.txt -alliances alliances.txt
+//./run -from Paris -to Los\ Ang/eles -departure_time_min 11152012000000 -departure_time_max 11172012000000 -arrival_time_min 11222012000000 -arrival_time_max 11252012000000 -max_layover 100000 -vacation_time_min 432000 -vacation_time_max 604800 -vacation_airports Rio London Chicago -flights flights.txt -alliances alliances.txt
