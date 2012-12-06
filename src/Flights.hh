@@ -22,8 +22,8 @@ struct Flight {
 	Id id; //!< Unique id of the flight
 	Airport from; //!< Airport where the flight takes off
 	Airport to; //!< Airport where the flight lands
-	Time takeoffTime; //!< Landing time
-	Time landTime; //!< Takeoff time
+	Time takeoffTime; //!< Takeoff time
+	Time landingTime; //!< Landing time
 	Company company; //!< Company of the flight
 	Cost cost; //!< Cost (without any discounts) of the flight
 };
@@ -43,29 +43,30 @@ public:
 	typedef std::multimap<Time, Flight> AirportSchedule; //!< Type of index for fast retrieval of flights given a time interval
 	typedef std::unordered_map<Airport, AirportSchedule> Index; //!< Type of index for fast retrievel of flights given an airport
 
-	//! Type of iterator pointing to one flight
+	//! Type of iterator pointing to a const flight
 	class Iterator {
 	public:
+		Iterator(typename AirportSchedule::const_iterator &it) : it(it) { /* nothing */ }
 		//! Indirection operator
 		const Flight &operator*() const { return it->second; }
 		//! Forward operator
 		void operator++() { it++; }
 		//! Non-equality operator
-		bool operator!=(const Iterator &other) const { return this->it != other->id; }
+		bool operator!=(const Iterator &other) const { return this->it != other.it; }
 		//! Equality operator
-		bool operator==(const Iterator &other) const { return this->it == other->id; }
+		bool operator==(const Iterator &other) const { return this->it == other.it; }
 	private:
-		typename AirportSchedule::iterator it; //!< Underlying iterator
+		typename AirportSchedule::const_iterator it; //!< Underlying iterator
 	};
 	typedef std::pair<Iterator, Iterator> Range; //!< Type of range of flights
 
 	/*!
 	 * \brief Add a flight to the world
 	 */
-	void addFlight(const Flight &&flight)
+	void add(const Flight &flight)
 	{
-		takeoffsSchedule[flight.from][flight.takeoffTime] = flight;
-		landingsSchedule[flight.to][flight.landingTime  ] = flight;
+		takeoffsSchedule[flight.from].insert({flight.takeoffTime, flight});
+		landingsSchedule[flight.to  ].insert({flight.landingTime, flight});
 	}
 
 	/*!
@@ -73,9 +74,9 @@ public:
 	 */
 	Range takeoffs(Airport airport, Time tMin, Time tMax) const
 	{
-		const auto &takeoffsFromAirport = takeoffsSchedule[airport];
-		auto lower = takeoffsFromAirport.lower_bound(tMin);
-		auto upper = takeoffsFromAirport.upper_bound(tMax);
+		const auto &takeoffsFromAirport = takeoffsSchedule.at(airport);
+		typename AirportSchedule::const_iterator lower = takeoffsFromAirport.lower_bound(tMin);
+		typename AirportSchedule::const_iterator upper = takeoffsFromAirport.upper_bound(tMax);
 		return { lower, upper };
 	}
 
@@ -84,9 +85,9 @@ public:
 	 */
 	Range landings(Airport airport, Time tMin, Time tMax) const
 	{
-		const auto &landingsOnAirport = landingsSchedule[airport];
-		auto lower = landingsOnAirport.lower_bound(tMin);
-		auto upper = landingsOnAirport.upper_bound(tMax);
+		const auto &landingsOnAirport = landingsSchedule.at(airport);
+		typename AirportSchedule::const_iterator lower = landingsOnAirport.lower_bound(tMin);
+		typename AirportSchedule::const_iterator upper = landingsOnAirport.upper_bound(tMax);
 		return { lower, upper };
 	}
 
