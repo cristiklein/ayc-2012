@@ -91,6 +91,10 @@ run-tests: release
 		tput sgr0; \
 	done
 
+unit-tests:
+	mkdir -p obj
+	g++ $(FLAGS) src/test_UniqueId.cc -o obj/test_UniqueId && obj/test_UniqueId
+
 test:
 	make run-tests TESTS="correctness1 scalability1 scalability2 scalability3"
 
