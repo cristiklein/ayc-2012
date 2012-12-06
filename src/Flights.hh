@@ -57,7 +57,7 @@ public:
 	/*!
 	 * \brief Get all flight from an airport taking off between tMin and tMax
 	 */
-	Range takeoffs(Airport airport, Time tMin, Time tMax)
+	Range takeoffs(Airport airport, Time tMin, Time tMax) const
 	{
 		const auto &takeoffsFromAirport = takeoffsSchedule[airport];
 		auto lower = takeoffsFromAirport.lower_bound(tMin);
@@ -68,7 +68,7 @@ public:
 	/*!
 	 * \brief Get all flight from an airport taking off between tMin and tMax
 	 */
-	Range landings(Airport airport, Time tMin, Time tMax)
+	Range landings(Airport airport, Time tMin, Time tMax) const
 	{
 		const auto &landingsOnAirport = landingsSchedule[airport];
 		auto lower = landingsOnAirport.lower_bound(tMin);

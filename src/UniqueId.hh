@@ -44,9 +44,9 @@ public:
 	/*!
 	 * \brief Retrieve the identifier or generate a new identifier for the given name
 	*/
-	Name getName(Id id)
+	Name getName(Id id) const
 	{
-		return idToName[id];
+		return idToName.at(id);
 	}
 
 private:
