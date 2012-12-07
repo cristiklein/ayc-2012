@@ -35,6 +35,8 @@ typedef ::Flight<> Flight;
 typedef ::Flights<> Flights;
 typedef ::UniqueId<>::Id Id;
 typedef ::UniqueId<>::Name Name;
+typedef unsigned long Time;
+typedef float Cost;
 
 /**
  * \struct Parameters
@@ -57,17 +59,15 @@ struct Parameters{
 	string work_hard_file;/*!< The file used to output the work hard result. */
 	string play_hard_file;/*!< The file used to output the play hard result. */
 	int nb_threads;/*!< The maximum number of worker threads */
-
-	float highestCost;
 };
 
-/**
- * \struct Travel
- * \brief Store a travel.
- * This structure don't need to be modified but feel free to change it if you want.
+/*!
+ * \brief Store a travel
  */
-struct Travel{
-	vector<const Flight *> flights;/*!< A travel is just a list of Flight(s). */
+struct Travel {
+	vector<const Flight *> flights; //!< List of flights
+	vector<float> discounts; //!< Applied discounts
+	float totalCost; //!< Total cost of the travel
 };
 
 time_t convert_string_to_timestamp(const string &s);
@@ -79,7 +79,6 @@ void parse_flight(Flight& flight, string& line);
 float parse_flights(Flights& flights, string filename);
 void parse_alliance(Alliances &alliance, string line);
 void parse_alliances(Alliances &alliances, string filename);
-bool inline company_are_in_a_common_alliance(Id c1, Id c2, const Alliances& alliances);
 bool has_just_traveled_with_company(const Flight& flight_before, const Flight& current_flight);
 bool has_just_traveled_with_alliance(const Flight& flight_before, const Flight& current_flight, const Alliances& alliances);
 vector<float> apply_discount(const Travel & travel, const Alliances&alliances);
@@ -93,33 +92,221 @@ Travel find_cheapest(const vector<Travel>& flights, const Alliances& alliances);
 Travel find_cheapest(const vector<Travel>& inbounds, const vector<Travel>& outbounds, const Alliances&alliances);
 Travel find_cheapest(const vector<Travel>& inbounds, const vector<Travel>& vias, const vector<Travel>& outbounds, const Alliances&alliances);
 void fill_travel(vector<Travel>& travels, const Flights& flights, Id starting_point, unsigned long t_min, unsigned long t_max);
-void merge_path(vector<Travel>& travel1, vector<Travel>& travel2);
 Travel work_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
 vector<Travel> play_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
 void output_play_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
 void output_work_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
 
-/**
- * \fn Travel work_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances)
- * \brief Solve the "Work Hard" problem.
- * This problem can be considered as the easy one. The goal is to find the cheapest way to join a point B from a point A regarding some parameters.
- * \param flights The list of available flights.
- * \param parameters The parameters.
- * \param alliances The alliances between companies.
- * \return The cheapest trip found.
- */
-Travel work_hard(Flights& flights, Parameters& parameters, const Alliances& alliances){
-	vector<Travel> travels;
-	//First, we need to create as much travels as it as the number of flights that take off from the
-	//first city
-	fill_travel(travels, flights, parameters.from, parameters.dep_time_min, parameters.dep_time_max);
-	compute_path(flights, parameters.to, travels, parameters.dep_time_min, parameters.dep_time_max, parameters, alliances);
-	vector<Travel> travels_back;
-	//Then we need to travel back
-	fill_travel(travels_back, flights, parameters.to, parameters.ar_time_min, parameters.ar_time_max);
-	compute_path(flights, parameters.from, travels_back, parameters.ar_time_min, parameters.ar_time_max, parameters, alliances);
+vector<Travel> computePath(
+	const Alliances& alliances,
+	const Flights& flights,
+	Id from, Id to,
+	Time tMin, Time tMax,
+	Time maxLayover,
+	Cost maxDiscount)
+{
+	struct Segment {
+		const struct Segment *prev; //!< pointer to previous segment
+		Id airport; //!< airport in which we are now
+		Time landingTime; //!< time from which we can take next plan
+		const Flight *flight; //!< flight taken to reach this city
+		float prevTotalCost; //!< total cost - minus price (cost * discount) of last flight
+		float totalCost; //!< total cost
+		float discount; //!< discount applied to last flight
+	};
 
-	return find_cheapest(travels, travels_back, alliances);
+	vector<const Segment *> allSegments; //!< Store all segments for garbage collection
+	priority_queue<pair<float, const Segment *>> queue; //!< Queue of segments to process
+
+	/* Add initial segments to queue */
+	auto range = flights.takeoffs(from,
+		tMin,
+		numeric_limits<Time>::max());
+	for(const Flight &newFlight : range) {
+		if (newFlight.landingTime > tMax)
+			continue;
+
+		Segment *seg = new Segment();
+		seg->prev = NULL;
+		seg->airport = newFlight.to;
+		seg->landingTime = newFlight.landingTime;
+		seg->flight = &newFlight;
+		seg->prevTotalCost = 0;
+		seg->totalCost = newFlight.cost;
+		seg->discount = 1;
+		queue.push(pair<float, const Segment *>(-seg->totalCost, seg));
+	}
+
+	float cheapestTravel = INFINITY;
+	vector<const Segment *> finalSegments;
+	while (!queue.empty()) {
+		const Segment *seg = queue.top().second;
+		queue.pop();
+
+		/* Pruning */
+		if (seg->totalCost - maxDiscount > cheapestTravel)
+			break;
+
+		/* Check if we reached our destination */
+		if (seg->airport == to) {
+			finalSegments.push_back(seg);
+			cheapestTravel = min(cheapestTravel, seg->totalCost);
+			continue;
+		}
+
+		/* Where can we go to from here? */
+		auto range = flights.takeoffs(seg->airport,
+			seg->landingTime,
+			seg->landingTime);
+		for(const Flight &newFlight : range) {
+			/* Out of time? */
+			if (newFlight.landingTime > tMax)
+				continue;
+
+			/* Avoid cycles */
+			bool wasHereBefore = false;
+			for (const Segment *s = seg; s != NULL; s = s->prev) {
+				if (s->airport == newFlight.to) {
+					wasHereBefore = true;
+					break;
+				}
+			}
+			if (wasHereBefore)
+				continue;
+
+			/* Everything seems okey, prepare new segment to be added to the queue */
+			Segment *newSeg = new Segment();
+			newSeg->prev = seg;
+			newSeg->airport = newFlight.to;
+			newSeg->landingTime = newFlight.landingTime;
+			newSeg->flight = &newFlight;
+
+			/* Compute cost (quite tricky, but works) */
+			float discount = 1;
+			if (newFlight.company == seg->flight->company)
+				discount = 0.7;
+			else if (alliances.areAllied(newFlight.company, seg->flight->company))
+				discount = 0.8;
+
+			newSeg->prevTotalCost = seg->prevTotalCost + seg->flight->cost * min(discount, seg->discount);
+			newSeg->totalCost = seg->prevTotalCost + seg->flight->cost * discount;
+			newSeg->discount = discount;
+
+			/* Done preparing new segment, add to queue */
+			allSegments.push_back(newSeg);
+			queue.push(make_pair<float, const Segment *>(-newSeg->totalCost, newSeg));
+		}
+	}
+
+	vector<Travel> travels;
+	for (const Segment *seg : finalSegments) {
+		Travel travel;
+		for (const Segment *s = seg; s != NULL && s->flight != NULL; s = s->prev) {
+			travel.flights.push_back(s->flight);
+			travel.discounts.push_back(s->discount);
+		}
+		travel.totalCost = seg->totalCost;
+		reverse(travel.flights.begin(), travel.flights.end());
+		travels.push_back(travel);
+	}
+
+	for (const Segment *s : allSegments)
+		delete s;
+	return travels;
+}
+
+Travel mergeAndFindCheapest(const Alliances &alliances, const vector<Travel> &inbounds, const vector<Travel> &outbounds)
+{
+	Travel bestTravel;
+	bestTravel.totalCost = INFINITY;
+
+	/* Compute valid prunings */
+	float highestInboundLast = 0, highestOutboundFirst = 0;
+	float cheapestInbound = INFINITY, cheapestOutbound = INFINITY;
+	for (const Travel &inbound : inbounds) {
+		highestInboundLast = max(highestInboundLast, inbound.flights.back()->cost);
+		cheapestInbound = min(cheapestInbound, inbound.totalCost);
+	}
+	for (const Travel &outbound : outbounds) {
+		highestOutboundFirst = max(highestOutboundFirst, outbound.flights.front()->cost);
+		cheapestOutbound = min(cheapestOutbound, outbound.totalCost);
+	}
+
+	/* Do cartezian product, do pruning, find best */
+	for (const Travel &inbound : inbounds) {
+		const Flight &lastInbound = *inbound.flights.back();
+
+		/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest inbound */
+		if (inbound.totalCost - 0.3 * lastInbound.cost - highestOutboundFirst * 0.3 > cheapestInbound)
+			continue;
+
+		for (const Travel &outbound : outbounds) {
+			const Flight &firstOutbound = *outbound.flights.front();
+
+			/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest outbound */
+			if (outbound.totalCost - 0.3 * firstOutbound.cost - highestInboundLast * 0.3 > cheapestOutbound)
+				continue;
+
+			/* Compute cost after merger */
+			float discount = 1;
+			if (lastInbound.company == firstOutbound.company)
+				discount = 0.7;
+			else if (alliances.areAllied(lastInbound.company, firstOutbound.company))
+				discount = 0.8;
+			float cost =
+				inbound.totalCost  - (inbound.discounts.back()  - discount) * lastInbound.cost +
+				outbound.totalCost - (outbound.discounts.back() - discount) * firstOutbound.cost;
+			
+			if (cost < bestTravel.totalCost) {
+				bestTravel = inbound;
+				bestTravel.flights.insert(bestTravel.flights.end(), outbound.flights.begin(), outbound.flights.end());
+				bestTravel.discounts.insert(bestTravel.discounts.end(), outbound.discounts.begin(), outbound.discounts.end());
+				bestTravel.discounts[inbound.discounts.size()-1] = discount;
+				bestTravel.discounts[inbound.discounts.size()  ] = discount;
+				bestTravel.totalCost = cost;
+			}
+
+		}
+	}
+	return bestTravel;
+}
+
+Travel workHard(const Alliances& alliances, const Flights& flights, const Parameters& parameters)
+{
+	/* Get most expensive flight from conference airport */
+	float mostExpensiveFromConf = 0;
+	for (const Flight &flight : flights.takeoffs(parameters.to, parameters.ar_time_min, parameters.ar_time_max))
+		mostExpensiveFromConf = max(mostExpensiveFromConf, flight.cost);
+	
+	/* Get most expensive flight to conference airport */
+	float mostExpensiveToConf = 0;
+	for (const Flight &flight : flights.landings(parameters.to, parameters.dep_time_min, parameters.dep_time_max))
+		mostExpensiveToConf = max(mostExpensiveToConf, flight.cost);
+	
+	/* Get most expensive flight from home airport */
+	float mostExpensiveFromHome = 0;
+	for (const Flight &flight : flights.takeoffs(parameters.from, parameters.dep_time_min, parameters.dep_time_max))
+		mostExpensiveFromHome = max(mostExpensiveFromHome, flight.cost);
+	
+	/* Get most expensive flight to home airport */
+	float mostExpensiveToHome = 0;
+	for (const Flight &flight : flights.landings(parameters.from, parameters.ar_time_min, parameters.ar_time_max))
+		mostExpensiveToHome = max(mostExpensiveToHome, flight.cost);
+
+	vector<Travel> inbounds = computePath(
+		alliances, flights, /* description about the world */
+		parameters.from, parameters.to, /* source, destination airport */
+		parameters.dep_time_min, parameters.dep_time_max, /* interval of time during which to fly */
+		parameters.max_layover_time, /* other trip parameters */
+		(mostExpensiveToConf + mostExpensiveFromHome) * 0.3 /* pruning parameter */);
+	vector<Travel> outbounds = computePath(
+		alliances, flights,
+		parameters.to, parameters.from,
+		parameters.ar_time_min, parameters.ar_time_max,
+		parameters.max_layover_time,
+		(mostExpensiveFromConf + mostExpensiveFromConf) * 0.3 /* pruning parameter */);
+
+	return mergeAndFindCheapest(alliances, inbounds, outbounds);
 }
 
 /**
@@ -131,6 +318,7 @@ Travel work_hard(Flights& flights, Parameters& parameters, const Alliances& alli
  * \param alliances The alliances between companies.
  * \return The cheapest trips found ordered by vacation destination (only the best result for each vacation destination).
  */
+#if 0
 vector<Travel> play_hard(Flights& flights, Parameters& parameters, const Alliances& alliances){
 	vector<Travel> results;
 	list<Id>::iterator it = parameters.airports_of_interest.begin();
@@ -176,6 +364,7 @@ vector<Travel> play_hard(Flights& flights, Parameters& parameters, const Allianc
 	}
 	return results;
 }
+#endif
 
 /**
  * \fn void apply_discount(Travel & travel, const Alliances&alliances)
@@ -259,8 +448,8 @@ void compute_path(const Flights& flights, Id to, vector<Travel>& final_travels, 
 		const Flight &currentFlight = *currentSegment->flight;
 
 		/* Pruning */
-		if (currentSegment->totalCost - 0.3 * currentFlight.cost - 0.3 * parameters.highestCost > cheapest)
-			break;
+		//if (currentSegment->totalCost - 0.3 * currentFlight.cost - 0.3 * parameters.highestCost > cheapest)
+		//	break;
 
 		if (currentFlight.to == to) {
 			finalSegments.push_back(currentSegment);
@@ -699,7 +888,7 @@ void print_travel(const UniqueId<> &uniqueId, const Travel& travel, const Allian
 void output_play_hard(const UniqueId<> &uniqueId, Flights& flights, Parameters& parameters, const Alliances& alliances){
 	ofstream output;
 	output.open(parameters.play_hard_file.c_str());
-	vector<Travel> travels = play_hard(flights, parameters, alliances);
+	vector<Travel> travels;// = play_hard(flights, parameters, alliances);
 	list<Id> cities = parameters.airports_of_interest;
 	for(unsigned int i=0; i<travels.size(); i++){
 		output<<"“Play Hard” Proposition "<<(i+1)<<" : "<<uniqueId.getName(cities.front())<<endl;
@@ -720,7 +909,7 @@ void output_play_hard(const UniqueId<> &uniqueId, Flights& flights, Parameters& 
 void output_work_hard(const UniqueId<> &uniqueId, Flights& flights, Parameters& parameters, const Alliances& alliances){
 	ofstream output;
 	output.open(parameters.work_hard_file.c_str());
-	Travel travel = work_hard(flights, parameters, alliances);
+	Travel travel = workHard(alliances, flights, parameters);
 	output<<"“Work Hard” Proposition :"<<endl;
 	print_travel(uniqueId, travel, alliances, output);
 	output.close();
@@ -747,7 +936,7 @@ int main(int argc, char **argv) {
 //	print_params(parameters);
 	Flights flights;
 	timeMe("parse params");
-	parameters.highestCost = parse_flights(uniqueId, flights, parameters.flights_file);
+	/*parameters.highestCost = */parse_flights(uniqueId, flights, parameters.flights_file);
 	timeMe("parse flights");
 //	cout<<"Printing flights..."<<endl;
 //	print_flights(flights);
