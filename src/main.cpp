@@ -451,62 +451,101 @@ Travel workHard(const Alliances& alliances, const Flights& flights, const Parame
 	return findCheapestAndMerge(alliances, inbounds, outbounds);
 }
 
-/**
- * \fn vector<Travel> play_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances)
- * \brief Solve the "Play Hard" problem.
- * This problem can be considered as the hard one. The goal is to find the cheapest way to join a point B from a point A regarding some parameters and for each city in the vacation destination list.
- * \param flights The list of available flights.
- * \param parameters The parameters.
- * \param alliances The alliances between companies.
- * \return The cheapest trips found ordered by vacation destination (only the best result for each vacation destination).
- */
-#if 0
-vector<Travel> play_hard(Flights& flights, Parameters& parameters, const Alliances& alliances){
+struct ParametersABCDTravel {
+	Id a, b, c, d;
+	Time tminAB, tmaxAB, tminBC, tmaxBC, tminCD, tmaxCD;
+	Time maxLayover;
+};
+
+Travel computeBestABCDTravel(const Alliances &alliances, const Flights &flights, const ParametersABCDTravel &p)
+{
+	/* Get most expensive flights from/to vacation (for pruning) */
+	float maxToB   = priciestFlight(flights.landings(p.b, p.tminAB, p.tmaxAB));
+	float maxFromB = priciestFlight(flights.takeoffs(p.b, p.tminBC, p.tmaxBC));
+	float maxToC   = priciestFlight(flights.landings(p.c, p.tminBC, p.tmaxBC));
+	float maxFromC = priciestFlight(flights.takeoffs(p.c, p.tminCD, p.tmaxCD));
+
+	vector<Travel> aToB = computePath(
+		alliances, flights, /* description about the world */
+		p.a, p.b, /* source, destination airport */
+		p.tminAB, p.tmaxAB, /* interval of time during which to fly */
+		p.maxLayover, /* other trip parameters */
+		(maxToB + maxFromB) * 0.3 /* pruning parameter */);
+	vector<Travel> bToC = computePath(
+		alliances, flights, /* description about the world */
+		p.b, p.c, /* source, destination airport */
+		p.tminBC, p.tmaxBC, /* interval of time during which to fly */
+		p.maxLayover, /* other trip parameters */
+		(maxToB + maxFromB + maxToC + maxFromC) * 0.3 /* pruning parameter */);
+	vector<Travel> cToD = computePath(
+		alliances, flights, /* description about the world */
+		p.c, p.d, /* source, destination airport */
+		p.tminCD, p.tmaxCD, /* interval of time during which to fly */
+		p.maxLayover, /* other trip parameters */
+		(maxToC + maxFromC) * 0.3 /* pruning parameter */);
+
+	return findCheapestAndMerge(alliances, aToB, bToC, cToD);
+}
+
+vector<Travel> playHard(const Alliances &alliances, const Flights& flights, Parameters& parameters)
+{
 	vector<Travel> results;
-	list<Id>::iterator it = parameters.airports_of_interest.begin();
-	for(; it != parameters.airports_of_interest.end(); it++){
-		Id current_airport_of_interest = *it;
-		vector<Travel> all_travels;
+	for (Id vacation : parameters.airports_of_interest) {
 		/*
 		 * The first part compute a travel from home -> vacation -> conference -> home
+		 * We'll use the terminology A -> B -> C -> D and AB BC CD for travels
 		 */
-		vector<Travel> home_to_vacation, vacation_to_conference, conference_to_home;
-		//compute the paths from home to vacation
-		fill_travel(home_to_vacation, flights, parameters.from, parameters.dep_time_min-parameters.vacation_time_max, parameters.dep_time_min-parameters.vacation_time_min);
-		compute_path(flights, current_airport_of_interest, home_to_vacation, parameters.dep_time_min-parameters.vacation_time_max, parameters.dep_time_min-parameters.vacation_time_min, parameters, alliances);
-		//compute the paths from vacation to conference
-		fill_travel(vacation_to_conference, flights, current_airport_of_interest, parameters.dep_time_min, parameters.dep_time_max);
-		compute_path(flights, parameters.to, vacation_to_conference, parameters.dep_time_min, parameters.dep_time_max, parameters, alliances);
-		//compute the paths from conference to home
-		fill_travel(conference_to_home, flights, parameters.to, parameters.ar_time_min, parameters.ar_time_max);
-		compute_path(flights, parameters.from, conference_to_home, parameters.ar_time_min, parameters.ar_time_max, parameters, alliances);
-		Travel best1 = find_cheapest(home_to_vacation, vacation_to_conference, conference_to_home, alliances);
+		ParametersABCDTravel p1;
+
+		/* Cities */
+		p1.a = parameters.from;
+		p1.b = vacation;
+		p1.c = parameters.to;
+		p1.d = parameters.from;
+
+		/* Compute valid travel times */
+		p1.tminAB = parameters.dep_time_min - parameters.vacation_time_max;
+		p1.tmaxAB = parameters.dep_time_min - parameters.vacation_time_min;
+		p1.tminBC = parameters.dep_time_min;
+		p1.tmaxBC = parameters.dep_time_max;
+		p1.tminCD = parameters.ar_time_min;
+		p1.tmaxCD = parameters.ar_time_max;
+		p1.maxLayover = parameters.max_layover_time;
+
+		Travel best1 = computeBestABCDTravel(alliances, flights, p1);
 
 		/*
 		 * The second part compute a travel from home -> conference -> vacation -> home
 		 */
-		vector<Travel> home_to_conference, conference_to_vacation, vacation_to_home;
-		//compute the paths from home to conference
-		fill_travel(home_to_conference, flights, parameters.from, parameters.dep_time_min, parameters.dep_time_max);
-		compute_path(flights, parameters.to, home_to_conference, parameters.dep_time_min, parameters.dep_time_max, parameters, alliances);
-		//compute the paths from conference to vacation
-		fill_travel(conference_to_vacation, flights, parameters.to, parameters.ar_time_min, parameters.ar_time_max);
-		compute_path(flights, current_airport_of_interest, conference_to_vacation, parameters.ar_time_min, parameters.ar_time_max, parameters, alliances);
-		//compute paths from vacation to home
-		fill_travel(vacation_to_home, flights, current_airport_of_interest, parameters.ar_time_max+parameters.vacation_time_min, parameters.ar_time_max+parameters.vacation_time_max);
-		compute_path(flights, parameters.from, vacation_to_home, parameters.ar_time_max+parameters.vacation_time_min, parameters.ar_time_max+parameters.vacation_time_max, parameters, alliances);
-		Travel best2 = find_cheapest(home_to_conference, conference_to_vacation, vacation_to_home, alliances);
+		ParametersABCDTravel p2;
 
-		float cost1 = best1.flights.size() ? compute_cost(best1, alliances) : INFINITY;
-		float cost2 = best2.flights.size() ? compute_cost(best2, alliances) : INFINITY;
-		if (cost1 < cost2)
-			results.push_back(best1);
-		else
+		/* Cities */
+		p2.a = parameters.from;
+		p2.b = parameters.to;
+		p2.c = vacation;
+		p2.d = parameters.from;
+
+		/* Compute valid travel times */
+		p2.tminAB = parameters.dep_time_min;
+		p2.tmaxAB = parameters.dep_time_max;
+		p2.tminBC = parameters.ar_time_min;
+		p2.tmaxBC = parameters.ar_time_max;
+		p2.tminCD = parameters.ar_time_max + parameters.vacation_time_min;
+		p2.tmaxCD = parameters.ar_time_max + parameters.vacation_time_max;
+		p2.maxLayover = parameters.max_layover_time;
+
+		Travel best2 = computeBestABCDTravel(alliances, flights, p2);
+
+		/*
+		 * Compare the two solutions
+		 */
+		if (best1.totalCost > best2.totalCost)
 			results.push_back(best2);
+		else
+			results.push_back(best1);
 	}
 	return results;
 }
-#endif
 
 /**
  * \fn time_t convert_string_to_timestamp(const string &s)
@@ -745,7 +784,7 @@ void printTravel(const UniqueId<> &uniqueId, const Travel& travel, ostream& outp
 void output_play_hard(const UniqueId<> &uniqueId, Flights& flights, Parameters& parameters, const Alliances& alliances){
 	ofstream output;
 	output.open(parameters.play_hard_file.c_str());
-	vector<Travel> travels;//= playHard(alliances, flights, parameters);
+	vector<Travel> travels = playHard(alliances, flights, parameters);
 	list<Id> cities = parameters.airports_of_interest;
 	for(unsigned int i=0; i<travels.size(); i++){
 		output<<"“Play Hard” Proposition "<<(i+1)<<" : "<<uniqueId.getName(cities.front())<<endl;
