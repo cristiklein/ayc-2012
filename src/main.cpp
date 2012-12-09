@@ -423,8 +423,8 @@ Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &tr
 Travel workHard(const Alliances& alliances, const Flights& flights, const Parameters& parameters)
 {
 	/* Get most expensive flights from/to conference */
-	float maxFromConf = priciestFlight(flights.takeoffs(parameters.to, parameters.ar_time_min, parameters.ar_time_max));
 	float maxToConf   = priciestFlight(flights.landings(parameters.to, parameters.dep_time_min, parameters.dep_time_max));
+	float maxFromConf = priciestFlight(flights.takeoffs(parameters.to, parameters.ar_time_min, parameters.ar_time_max));
 
 	vector<Travel> inbounds = computePath(
 		alliances, flights, /* description about the world */
