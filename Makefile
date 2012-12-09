@@ -97,6 +97,6 @@ unit-tests:
 	g++ $(FLAGS) src/test_Alliances.cc -o obj/test_Alliances && obj/test_Alliances
 
 test:
-	make run-tests TESTS="correctness1 scalability1 scalability2 scalability3"
+	make run-tests TESTS="correctness1 correctness2 scalability1 scalability2 scalability3"
 
 include .depend	
