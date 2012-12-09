@@ -322,64 +322,8 @@ Travel mergeTravels(const Alliances &alliances, const Travel &travelAB, const Tr
 	return mergedTravel;
 }
 
-Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &inbounds, const vector<Travel> &outbounds)
-{
-	Travel bestTravel;
-	bestTravel.totalCost = INFINITY;
-
-	/* Compute valid prunings */
-	float highestInboundLast = 0, highestOutboundFirst = 0;
-	float cheapestInbound = INFINITY, cheapestOutbound = INFINITY;
-	for (const Travel &inbound : inbounds) {
-		highestInboundLast = max(highestInboundLast, inbound.flights.back()->cost);
-		cheapestInbound = min(cheapestInbound, inbound.totalCost);
-	}
-	for (const Travel &outbound : outbounds) {
-		highestOutboundFirst = max(highestOutboundFirst, outbound.flights.front()->cost);
-		cheapestOutbound = min(cheapestOutbound, outbound.totalCost);
-	}
-
-	/* Do cartezian product, do pruning, find best */
-	for (const Travel &inbound : inbounds) {
-		const Flight &lastInbound = *inbound.flights.back();
-
-		/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest inbound */
-		if (inbound.totalCost - 0.3 * lastInbound.cost - highestOutboundFirst * 0.3 > cheapestInbound)
-			continue;
-
-		for (const Travel &outbound : outbounds) {
-			const Flight &firstOutbound = *outbound.flights.front();
-
-			/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest outbound */
-			if (outbound.totalCost - 0.3 * firstOutbound.cost - highestInboundLast * 0.3 > cheapestOutbound)
-				continue;
-
-			/* Compute cost after merger */
-			float discount = getDiscount(alliances, lastInbound, firstOutbound);
-			float cost =
-				inbound.totalCost  - (inbound.discounts.back()  - discount) * lastInbound.cost +
-				outbound.totalCost - (outbound.discounts.back() - discount) * firstOutbound.cost;
-			
-			if (cost < bestTravel.totalCost) {
-				bestTravel = inbound;
-				bestTravel.flights.insert(bestTravel.flights.end(), outbound.flights.begin(), outbound.flights.end());
-				bestTravel.discounts.insert(bestTravel.discounts.end(), outbound.discounts.begin(), outbound.discounts.end());
-				bestTravel.discounts[inbound.discounts.size()-1] = discount;
-				bestTravel.discounts[inbound.discounts.size()  ] = discount;
-				bestTravel.totalCost = cost;
-			}
-
-		}
-	}
-	return bestTravel;
-}
-
 Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &travelsAB, const vector<Travel> &travelsBC, const vector<Travel> &travelsCD)
 {
-	/* Notation: the airports are named as follows A -> B -> C -> D
-	 * Hence, the name of the flights are AB, BC and CD
-	 */
-
 	const Travel *bestTravelAB = NULL, *bestTravelBC = NULL, *bestTravelCD = NULL;
 	float bestCost = INFINITY;
 
@@ -435,6 +379,49 @@ Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &tr
 	}
 
 	return mergeTravels(alliances, *bestTravelAB, *bestTravelBC, *bestTravelCD);
+}
+
+Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &travelsAB, const vector<Travel> &travelsBC)
+{
+	/* This function is very similar to the one above
+	 * one day, they should probabily be merge together, but they have pretty different pruning rules
+	 * so for now we have not bothered studying their merger
+	 */
+	const Travel *bestTravelAB = NULL, *bestTravelBC = NULL;
+	float bestCost = INFINITY;
+
+	/* Compute valid prunings */
+	float maxToB   = priciestLastFlight(travelsAB);
+	float maxFromB = priciestFirstFlight(travelsBC);
+	float minAB = cheapestTravel(travelsAB);
+	float minBC = cheapestTravel(travelsBC);
+
+	/* Do cartezian product, do pruning, find best */
+	for (const Travel &travelAB : travelsAB) {
+		const Flight &lastFlight = *travelAB.flights.back();
+
+		/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest choice */
+		if (travelAB.totalCost - 0.3 * lastFlight.cost - maxFromB * 0.3 > minAB)
+			continue;
+
+		for (const Travel &travelBC : travelsBC) {
+			const Flight &firstFlight = *travelBC.flights.front();
+
+			/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest choice */
+			if (travelBC.totalCost - 0.3 * firstFlight.cost - maxToB * 0.3 > minBC)
+				continue;
+
+			/* Compute cost after merger */
+			float newCost = computeCostAfterMerger(alliances, travelAB, travelBC);
+			if (newCost < bestCost) {
+				bestCost = newCost;
+				bestTravelAB = &travelAB;
+				bestTravelBC = &travelBC;
+			}
+
+		}
+	}
+	return mergeTravels(alliances, *bestTravelAB, *bestTravelBC);
 }
 
 Travel workHard(const Alliances& alliances, const Flights& flights, const Parameters& parameters)
