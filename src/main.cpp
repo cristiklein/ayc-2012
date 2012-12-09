@@ -53,7 +53,7 @@ struct Parameters{
 	unsigned long max_layover_time;/*!< You don't want to wait more than this amount of time at the airport between 2 flights (in seconds) */
 	unsigned long vacation_time_min;/*!< Your minimum vacation time (in seconds). You can't be in a plane during this time. */
 	unsigned long vacation_time_max;/*!< Your maximum vacation time (in seconds). You can't be in a plane during this time. */
-	list<Id> airports_of_interest;/*!< The list of cities you are interested in. */
+	vector<Id> airports_of_interest;/*!< The list of cities you are interested in. */
 	string flights_file;/*!< The name of the file containing the flights. */
 	string alliances_file;/*!< The name of the file containing the company alliances. */
 	string work_hard_file;/*!< The file used to output the work hard result. */
@@ -492,10 +492,12 @@ Travel computeBestABCDTravel(const Alliances &alliances, const Flights &flights,
 	return findCheapestAndMerge(alliances, aToB, bToC, cToD);
 }
 
-vector<Travel> playHard(const Alliances &alliances, const Flights& flights, Parameters& parameters)
+map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Parameters& parameters)
 {
-	vector<Travel> results;
-	for (Id vacation : parameters.airports_of_interest) {
+	map<Id, Travel> results;
+	int n = parameters.airports_of_interest.size();
+	for (int i = 0; i < n; i++) {
+		Id vacation = parameters.airports_of_interest[i];
 		/*
 		 * The first part compute a travel from home -> vacation -> conference -> home
 		 * We'll use the terminology A -> B -> C -> D and AB BC CD for travels
@@ -545,9 +547,9 @@ vector<Travel> playHard(const Alliances &alliances, const Flights& flights, Para
 		 * Compare the two solutions
 		 */
 		if (best1.totalCost > best2.totalCost)
-			results.push_back(best2);
+			results[vacation] = best2;
 		else
-			results.push_back(best1);
+			results[vacation] = best1;
 	}
 	return results;
 }
@@ -580,32 +582,6 @@ time_t convert_string_to_timestamp(const string &s){
 		time.tm_sec  = (c[12]-'0') * 10 + c[13]-'0';
 		return timegm(&time);
 	}
-}
-
-/**
- * \fn void print_params(Parameters &parameters)
- * \brief You can use this function to display the parameters
- */
-void print_params(Parameters &parameters){
-	cout<<"From : "					<<parameters.from					<<endl;
-	cout<<"To : "					<<parameters.to						<<endl;
-	cout<<"dep_time_min : "			<<parameters.dep_time_min			<<endl;
-	cout<<"dep_time_max : "			<<parameters.dep_time_max			<<endl;
-	cout<<"ar_time_min : "			<<parameters.ar_time_min			<<endl;
-	cout<<"ar_time_max : "			<<parameters.ar_time_max			<<endl;
-	cout<<"max_layover_time : "		<<parameters.max_layover_time		<<endl;
-	cout<<"vacation_time_min : "	<<parameters.vacation_time_min		<<endl;
-	cout<<"vacation_time_max : "	<<parameters.vacation_time_max		<<endl;
-	cout<<"flights_file : "			<<parameters.flights_file			<<endl;
-	cout<<"alliances_file : "		<<parameters.alliances_file			<<endl;
-	cout<<"work_hard_file : "		<<parameters.work_hard_file			<<endl;
-	cout<<"play_hard_file : "		<<parameters.play_hard_file			<<endl;
-	list<Id>::iterator it = parameters.airports_of_interest.begin();
-	for(; it != parameters.airports_of_interest.end(); it++)
-		cout<<"airports_of_interest : "	<<*it	<<endl;
-	cout<<"flights : "				<<parameters.flights_file			<<endl;
-	cout<<"alliances : "			<<parameters.alliances_file			<<endl;
-	cout<<"nb_threads : "			<<parameters.nb_threads				<<endl;
 }
 
 /**
@@ -789,12 +765,11 @@ void printTravel(const UniqueId<> &uniqueId, const Travel& travel, ostream& outp
 void output_play_hard(const UniqueId<> &uniqueId, Flights& flights, Parameters& parameters, const Alliances& alliances){
 	ofstream output;
 	output.open(parameters.play_hard_file.c_str());
-	vector<Travel> travels = playHard(alliances, flights, parameters);
-	list<Id> cities = parameters.airports_of_interest;
+	map<Id, Travel> travels = playHard(alliances, flights, parameters);
+	vector<Id> cities = parameters.airports_of_interest;
 	for(unsigned int i=0; i<travels.size(); i++){
-		output<<"“Play Hard” Proposition "<<(i+1)<<" : "<<uniqueId.getName(cities.front())<<endl;
-		printTravel(uniqueId, travels[i], output);
-		cities.pop_front();
+		output<<"“Play Hard” Proposition "<<(i+1)<<" : "<<uniqueId.getName(cities[i])<<endl;
+		printTravel(uniqueId, travels[cities[i]], output);
 		output<<endl;
 	}
 	output.close();
