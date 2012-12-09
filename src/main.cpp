@@ -235,12 +235,7 @@ vector<Travel> computePath(
 			newSeg->flight = &newFlight;
 
 			/* Compute cost (quite tricky, but works) */
-			float discount = 1;
-			if (newFlight.company == seg->flight->company)
-				discount = 0.7;
-			else if (alliances.areAllied(newFlight.company, seg->flight->company))
-				discount = 0.8;
-
+			float discount = getDiscount(alliances, newFlight, *seg->flight);
 			newSeg->prevTotalCost = seg->prevTotalCost + seg->flight->cost * min(discount, seg->discount);
 			newSeg->totalCost = seg->prevTotalCost + seg->flight->cost * discount;
 			newSeg->discount = discount;
@@ -301,11 +296,7 @@ Travel mergeAndFindCheapest(const Alliances &alliances, const vector<Travel> &in
 				continue;
 
 			/* Compute cost after merger */
-			float discount = 1;
-			if (lastInbound.company == firstOutbound.company)
-				discount = 0.7;
-			else if (alliances.areAllied(lastInbound.company, firstOutbound.company))
-				discount = 0.8;
+			float discount = getDiscount(alliances, lastInbound, firstOutbound);
 			float cost =
 				inbound.totalCost  - (inbound.discounts.back()  - discount) * lastInbound.cost +
 				outbound.totalCost - (outbound.discounts.back() - discount) * firstOutbound.cost;
