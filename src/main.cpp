@@ -267,6 +267,7 @@ vector<Travel> computePath(
 	return travels;
 }
 
+Travel mergeTravels(const Alliances &alliances, const Travel &travelAB, const Travel &travelBC, const Travel &travelCD = Travel());
 float computeCostAfterMerger(const Alliances &alliances, const Travel &travelAB, const Travel &travelBC, const Travel &travelCD = Travel())
 {
 	float totalCost = travelAB.totalCost + travelBC.totalCost + travelCD.totalCost;
@@ -278,17 +279,21 @@ float computeCostAfterMerger(const Alliances &alliances, const Travel &travelAB,
 	totalCost -= (prevDiscountBC - min(prevDiscountBC, discountInB)) * travelBC.flights.front()->cost;
 
 	if (travelCD.flights.size()) {
-		float discountInC = getDiscount(alliances, *travelAB.flights.back(), *travelBC.flights.front());
+		float discountInC = getDiscount(alliances, *travelBC.flights.back(), *travelCD.flights.front());
 		float prevDiscountBC = travelBC.discounts.back();
 		float prevDiscountCD = travelCD.discounts.front();
 		totalCost -= (prevDiscountBC - min(prevDiscountBC, discountInC)) * travelBC.flights.back()->cost;
 		totalCost -= (prevDiscountCD - min(prevDiscountCD, discountInC)) * travelCD.flights.front()->cost;
 	}
 
-	return totalCost;
+	/* The bug is here somewhere */
+	/* Find it, and you shave off 4x */
+	Travel t = mergeTravels(alliances, travelAB, travelBC, travelCD);
+
+	return t.totalCost;
 }
 
-Travel mergeTravels(const Alliances &alliances, const Travel &travelAB, const Travel &travelBC, const Travel &travelCD = Travel())
+Travel mergeTravels(const Alliances &alliances, const Travel &travelAB, const Travel &travelBC, const Travel &travelCD /*= Travel()*/)
 {
 	/* Create a new travel with all the flights and discounts */
 	Travel mergedTravel = travelAB;
