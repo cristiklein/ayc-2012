@@ -87,10 +87,6 @@ void print_alliances(const Alliances &alliances);
 void print_flights(const vector<Flight>& flights, const vector<float>& discounts, ostream& output);
 bool never_traveled_to(Travel travel, Id city);
 void print_travel(const Travel& travel, const Alliances&alliances, ostream& output);
-void compute_path(const Flights& flights, Id to, vector<Travel>& travels, unsigned long t_min, unsigned long t_max, const Parameters &parameters, const Alliances &alliances);
-Travel find_cheapest(const vector<Travel>& flights, const Alliances& alliances);
-Travel find_cheapest(const vector<Travel>& inbounds, const vector<Travel>& outbounds, const Alliances&alliances);
-Travel find_cheapest(const vector<Travel>& inbounds, const vector<Travel>& vias, const vector<Travel>& outbounds, const Alliances&alliances);
 void fill_travel(vector<Travel>& travels, const Flights& flights, Id starting_point, unsigned long t_min, unsigned long t_max);
 Travel work_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
 vector<Travel> play_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
@@ -724,22 +720,6 @@ void print_params(Parameters &parameters){
 }
 
 /**
- * \fn void print_flight(const Flight& flight, ostream& output)
- * \brief You can use this function to display a flight
- */
-void print_flight(const UniqueId<> &uniqueId, const Flight& flight, float discount, ostream& output){
-	struct tm * take_off_t, *land_t;
-	take_off_t = gmtime(((const time_t*)&(flight.takeoffTime)));
-	output<<uniqueId.getName(flight.company)<<"-";
-	output<<""<<uniqueId.getName(flight.id)<<"-";
-	output<<uniqueId.getName(flight.from)<<" ("<<(take_off_t->tm_mon+1)<<"/"<<take_off_t->tm_mday<<" "<<take_off_t->tm_hour<<"h"<<take_off_t->tm_min<<"min"<<")"<<"/";
-	land_t = gmtime(((const time_t*)&(flight.landingTime)));
-	output<<uniqueId.getName(flight.to)<<" ("<<(land_t->tm_mon+1)<<"/"<<land_t->tm_mday<<" "<<land_t->tm_hour<<"h"<<land_t->tm_min<<"min"<<")-";
-	output<<flight.cost<<"$"<<"-"<<discount*100<<"%"<<endl;
-
-}
-
-/**
  * \fn void read_parameters(Parameters& parameters, int argc, char **argv)
  * \brief This function is used to read the parameters
  * \param parameters Represents the structure that will be filled with the parameters.
@@ -889,26 +869,24 @@ void parse_alliances(UniqueId<> &uniqueId, Alliances &alliances, string filename
 	}
 }
 
-/**
- * \fn void print_flights(vector<Flight>& flights, ostream& output)
- * \brief Display the flights on the standard output.
- * \param flights The flights.
- */
-void print_flights(const UniqueId<> &uniqueId, const vector<const Flight *>& flights, const vector<float> &discounts, ostream& output){
-	for(unsigned int i=0; i<flights.size(); i++)
-		print_flight(uniqueId, *flights[i], discounts[i], output);
-}
+void printTravel(const UniqueId<> &uniqueId, const Travel& travel, ostream& output)
+{
+	output << "Price : " << travel.totalCost << endl;
 
-/**
- * \fn void print_travel(Travel& travel, const Alliances&alliances)
- * \brief Display a travel on the standard output.
- * \param travel The travel.
- * \param alliances The alliances (used to compute the price).
- */
-void print_travel(const UniqueId<> &uniqueId, const Travel& travel, const Alliances&alliances, ostream& output){
-	vector<float> discounts = apply_discount(travel, alliances);
-	output<<"Price : "<<compute_cost(travel, alliances)<<endl;
-	print_flights(uniqueId, travel.flights, discounts, output);
+	for (size_t i = 0; i < travel.flights.size(); i++) {
+		float discount = travel.discounts[i];
+		const Flight &flight = *travel.flights[i];
+
+		struct tm *take_off_t, *land_t;
+		take_off_t = gmtime(((const time_t*)&(flight.takeoffTime)));
+		output << uniqueId.getName(flight.company) << "-";
+		output << "" << uniqueId.getName(flight.id) << "-";
+		output << uniqueId.getName(flight.from)<<" ("<<(take_off_t->tm_mon+1)<<"/"<<take_off_t->tm_mday<<" "<<take_off_t->tm_hour<<"h"<<take_off_t->tm_min<<"min"<<")"<<"/";
+		land_t = gmtime(((const time_t*)&(flight.landingTime)));
+		output<<uniqueId.getName(flight.to)<<" ("<<(land_t->tm_mon+1)<<"/"<<land_t->tm_mday<<" "<<land_t->tm_hour<<"h"<<land_t->tm_min<<"min"<<")-";
+		output<<flight.cost<<"$"<<"-"<<discount*100<<"%"<<endl;
+	}
+
 	output<<endl;
 }
 
@@ -922,30 +900,23 @@ void print_travel(const UniqueId<> &uniqueId, const Travel& travel, const Allian
 void output_play_hard(const UniqueId<> &uniqueId, Flights& flights, Parameters& parameters, const Alliances& alliances){
 	ofstream output;
 	output.open(parameters.play_hard_file.c_str());
-	vector<Travel> travels;// = play_hard(flights, parameters, alliances);
+	vector<Travel> travels;//= playHard(alliances, flights, parameters);
 	list<Id> cities = parameters.airports_of_interest;
 	for(unsigned int i=0; i<travels.size(); i++){
 		output<<"“Play Hard” Proposition "<<(i+1)<<" : "<<uniqueId.getName(cities.front())<<endl;
-		print_travel(uniqueId, travels[i], alliances, output);
+		printTravel(uniqueId, travels[i], output);
 		cities.pop_front();
 		output<<endl;
 	}
 	output.close();
 }
 
-/**
- * \fn void output_work_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances)
- * \brief Display the solution of the "Work Hard" problem by solving it first.
- * \param flights The list of available flights.
- * \param parameters The parameters.
- * \param alliances The alliances between companies.
- */
-void output_work_hard(const UniqueId<> &uniqueId, Flights& flights, Parameters& parameters, const Alliances& alliances){
+void outputWorkHard(const UniqueId<> &uniqueId, const Parameters& parameters, const Travel &travel)
+{
 	ofstream output;
 	output.open(parameters.work_hard_file.c_str());
-	Travel travel = workHard(alliances, flights, parameters);
-	output<<"“Work Hard” Proposition :"<<endl;
-	print_travel(uniqueId, travel, alliances, output);
+	output << "“Work Hard” Proposition :" << endl;
+	printTravel(uniqueId, travel, output);
 	output.close();
 }
 
@@ -955,6 +926,7 @@ int main(int argc, char **argv) {
 	using Planner::Alliances;
 	using Planner::Flights;
 	using Planner::Parameters;
+	using Planner::Travel;
 	using Planner::parse_alliances;
 	using Planner::read_parameters;
 	using Planner::parse_flights;
@@ -981,7 +953,9 @@ int main(int argc, char **argv) {
 	timeMe("parse alliances");
 	output_play_hard(uniqueId, flights, parameters, alliances);
 	timeMe("play hard");
-	output_work_hard(uniqueId, flights, parameters, alliances);
+
+	Travel workHardTravel = workHard(alliances, flights, parameters);
+	outputWorkHard(uniqueId, parameters, workHardTravel);
 	timeMe("work hard");
 
 	return 0;
