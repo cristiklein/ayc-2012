@@ -157,7 +157,7 @@ vector<Travel> computePath(
 		/* Where can we go to from here? */
 		auto range = flights.takeoffs(seg->airport,
 			seg->landingTime,
-			seg->landingTime);
+			seg->landingTime + maxLayover);
 		for(const Flight &newFlight : range) {
 			/* Out of time? */
 			if (newFlight.landingTime > tMax)
