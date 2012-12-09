@@ -374,7 +374,13 @@ Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &tr
 		}
 	}
 
-	return mergeTravels(alliances, *bestTravelAB, *bestTravelBC, *bestTravelCD);
+	if (bestTravelAB)
+		return mergeTravels(alliances, *bestTravelAB, *bestTravelBC, *bestTravelCD);
+	else {
+		Travel travel = Travel();
+		travel.totalCost = INFINITY;
+		return travel;
+	}
 }
 
 Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &travelsAB, const vector<Travel> &travelsBC)
@@ -417,7 +423,14 @@ Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &tr
 
 		}
 	}
-	return mergeTravels(alliances, *bestTravelAB, *bestTravelBC);
+
+	if (bestTravelAB)
+		return mergeTravels(alliances, *bestTravelAB, *bestTravelBC);
+	else {
+		Travel travel = Travel();
+		travel.totalCost = INFINITY;
+		return travel;
+	}
 }
 
 Travel workHard(const Alliances& alliances, const Flights& flights, const Parameters& parameters)
