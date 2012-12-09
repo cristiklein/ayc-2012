@@ -1,0 +1,5 @@
+- fix playHard
+- niceify playHard output path
+- parallelize
+- doxygenize / cleanup
+- document
