@@ -142,12 +142,11 @@ float priciestFlight(const Flights::Range &flights)
 
 float getDiscount(const Alliances &alliances, const Flight &f1, const Flight &f2)
 {
-	float discount = 1;
 	if (f1.company == f2.company)
-		discount = 0.7;
-	else if (alliances.areAllied(f1.company, f2.company))
-		discount = 0.8;
-	return discount;
+		return 0.7;
+	if (alliances.areAllied(f1.company, f2.company))
+		return 0.8;
+	return 1;
 }
 
 vector<Travel> computePath(
