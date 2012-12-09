@@ -97,6 +97,59 @@ vector<Travel> play_hard(const Flights& flights, Parameters& parameters, const A
 void output_play_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
 void output_work_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
 
+float priciestFirstFlight(const vector<Travel> &travels)
+{
+	float result = 0;
+	for (const Travel &travel : travels) {
+		float cost = travel.flights.front()->cost;
+		if (result < cost)
+			result = cost;
+	}
+	return result;
+}
+
+float priciestLastFlight(const vector<Travel> &travels)
+{
+	float result = 0;
+	for (const Travel &travel : travels) {
+		float cost = travel.flights.back()->cost;
+		if (result < cost)
+			result = cost;
+	}
+	return result;
+}
+
+float cheapestTravel(const vector<Travel> &travels)
+{
+	float result = INFINITY;
+	for (const Travel &travel : travels) {
+		float cost = travel.totalCost;
+		if (result > cost)
+			result = cost;
+	}
+	return result;
+}
+
+float priciestFlight(const Flights::Range &flights)
+{
+	float result = 0;
+	for (const Flight &flight : flights) {
+		if (result < flight.cost)
+			result = flight.cost;
+	}
+	return result;
+}
+
+float getDiscount(const Alliances &alliances, const Flight &f1, const Flight &f2)
+{
+	float discount = 1;
+	if (f1.company == f2.company)
+		discount = 0.7;
+	else if (alliances.areAllied(f1.company, f2.company))
+		discount = 0.8;
+	return discount;
+}
+
 vector<Travel> computePath(
 	const Alliances& alliances,
 	const Flights& flights,
