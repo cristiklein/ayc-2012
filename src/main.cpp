@@ -162,9 +162,9 @@ vector<Travel> computePath(
 		Id airport; //!< airport in which we are now
 		Time landingTime; //!< time from which we can take next plan
 		const Flight *flight; //!< flight taken to reach this city
-		float prevTotalCost; //!< total cost - minus price (cost * discount) of last flight
+		float prevTotalCost; //!< total cost - minus price (cost * discount) of last flight (may be different from prev->totalCost, if a lower discount was applied to prev->flight)
 		float totalCost; //!< total cost
-		float discount; //!< discount applied to last flight
+		float discount; //!< discount applied to last flight (i.e., the one in flight)
 	};
 
 	vector<const Segment *> allSegments; //!< Store all segments for garbage collection
@@ -236,7 +236,7 @@ vector<Travel> computePath(
 			/* Compute cost (quite tricky, but works) */
 			float discount = getDiscount(alliances, newFlight, *seg->flight);
 			newSeg->prevTotalCost = seg->prevTotalCost + seg->flight->cost * min(discount, seg->discount);
-			newSeg->totalCost = seg->prevTotalCost + seg->flight->cost * discount;
+			newSeg->totalCost = newSeg->prevTotalCost + newSeg->flight->cost * discount;
 			newSeg->discount = discount;
 
 			/* Done preparing new segment, add to queue */
@@ -245,15 +245,24 @@ vector<Travel> computePath(
 		}
 	}
 
+	/* Store segments in a nice travel structure
+	 * There is quite complex machinery for fast recomputation of discounts
+	 */
 	vector<Travel> travels;
 	for (const Segment *seg : finalSegments) {
 		Travel travel;
+		float lastDiscount = 1;
 		for (const Segment *s = seg; s != NULL && s->flight != NULL; s = s->prev) {
 			travel.flights.push_back(s->flight);
-			travel.discounts.push_back(s->discount);
+			float discount = 1;
+			if (s->prev && s->prev->flight)
+				discount = getDiscount(alliances, *s->flight, *s->prev->flight);
+			travel.discounts.push_back(min(discount, lastDiscount));
+			lastDiscount = discount;
 		}
 		travel.totalCost = seg->totalCost;
 		reverse(travel.flights.begin(), travel.flights.end());
+		reverse(travel.discounts.begin(), travel.discounts.end());
 		travels.push_back(travel);
 	}
 
