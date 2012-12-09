@@ -359,10 +359,6 @@ Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &tr
 					continue;
 
 				float newCost = computeCostAfterMerger(alliances, travelAB, travelBC, travelCD);
-				/* check */
-				Travel mergedTravel = mergeTravels(alliances, travelAB, travelBC, travelCD);
-				assert(newCost == mergedTravel.totalCost);
-
 				if (newCost < bestCost) {
 					bestCost = newCost;
 					bestTravelAB = &travelAB;
