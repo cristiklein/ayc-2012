@@ -276,13 +276,17 @@ float computeCostAfterMerger(const Alliances &alliances, const Travel &travelAB,
 	float totalCost = travelAB.totalCost + travelBC.totalCost + travelCD.totalCost;
 
 	float discountInB = getDiscount(alliances, *travelAB.flights.back(), *travelBC.flights.front());
-	totalCost -= (travelAB.discounts.back()  - discountInB) * travelAB.flights.back()->cost;
-	totalCost -= (travelBC.discounts.front() - discountInB) * travelBC.flights.front()->cost;
+	float prevDiscountAB = travelAB.discounts.back();
+	float prevDiscountBC = travelBC.discounts.front();
+	totalCost -= (prevDiscountAB - min(prevDiscountAB, discountInB)) * travelAB.flights.back()->cost;
+	totalCost -= (prevDiscountBC - min(prevDiscountBC, discountInB)) * travelBC.flights.front()->cost;
 
 	if (travelCD.flights.size()) {
-		float discountInC = getDiscount(alliances, *travelBC.flights.back(), *travelCD.flights.front());
-		totalCost -= (travelBC.discounts.back()  - discountInC) * travelBC.flights.back()->cost;
-		totalCost -= (travelCD.discounts.front() - discountInC) * travelCD.flights.front()->cost;
+		float discountInC = getDiscount(alliances, *travelAB.flights.back(), *travelBC.flights.front());
+		float prevDiscountBC = travelBC.discounts.back();
+		float prevDiscountCD = travelCD.discounts.front();
+		totalCost -= (prevDiscountBC - min(prevDiscountBC, discountInC)) * travelBC.flights.back()->cost;
+		totalCost -= (prevDiscountCD - min(prevDiscountCD, discountInC)) * travelCD.flights.front()->cost;
 	}
 
 	return totalCost;
