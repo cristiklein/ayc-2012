@@ -70,29 +70,6 @@ struct Travel {
 	float totalCost; //!< Total cost of the travel
 };
 
-time_t convert_string_to_timestamp(const string &s);
-void print_params(Parameters &parameters);
-void print_flight(const Flight& flight, float discount, ostream& output);
-void read_parameters(Parameters& parameters, int argc, char **argv);
-void split_string(vector<string>& result, string line, char separator);
-void parse_flight(Flight& flight, string& line);
-float parse_flights(Flights& flights, string filename);
-void parse_alliance(Alliances &alliance, string line);
-void parse_alliances(Alliances &alliances, string filename);
-bool has_just_traveled_with_company(const Flight& flight_before, const Flight& current_flight);
-bool has_just_traveled_with_alliance(const Flight& flight_before, const Flight& current_flight, const Alliances& alliances);
-vector<float> apply_discount(const Travel & travel, const Alliances&alliances);
-float compute_cost(const Travel & travel, const Alliances&alliances);
-void print_alliances(const Alliances &alliances);
-void print_flights(const vector<Flight>& flights, const vector<float>& discounts, ostream& output);
-bool never_traveled_to(Travel travel, Id city);
-void print_travel(const Travel& travel, const Alliances&alliances, ostream& output);
-void fill_travel(vector<Travel>& travels, const Flights& flights, Id starting_point, unsigned long t_min, unsigned long t_max);
-Travel work_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
-vector<Travel> play_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
-void output_play_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
-void output_work_hard(const Flights& flights, Parameters& parameters, const Alliances& alliances);
-
 float priciestFirstFlight(const vector<Travel> &travels)
 {
 	float result = 0;
