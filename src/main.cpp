@@ -752,21 +752,14 @@ void printTravel(const UniqueId<> &uniqueId, const Travel& travel, ostream& outp
 	output<<endl;
 }
 
-/**
- * \fn void output_play_hard(vector<Flight>& flights, Parameters& parameters, const Alliances& alliances)
- * \brief Display the solution of the "Play Hard" problem by solving it first.
- * \param flights The list of available flights.
- * \param parameters The parameters.
- * \param alliances The alliances between companies.
- */
-void output_play_hard(const UniqueId<> &uniqueId, Flights& flights, Parameters& parameters, const Alliances& alliances){
+void outputPlayHard(const UniqueId<> &uniqueId, const Parameters &parameters, const std::map<Id, Travel> &travels)
+{
 	ofstream output;
 	output.open(parameters.play_hard_file.c_str());
-	map<Id, Travel> travels = playHard(alliances, flights, parameters);
 	vector<Id> cities = parameters.airports_of_interest;
 	for(unsigned int i=0; i<travels.size(); i++){
 		output<<"“Play Hard” Proposition "<<(i+1)<<" : "<<uniqueId.getName(cities[i])<<endl;
-		printTravel(uniqueId, travels[cities[i]], output);
+		printTravel(uniqueId, travels.at(cities[i]), output);
 		output<<endl;
 	}
 	output.close();
@@ -818,7 +811,8 @@ int main(int argc, char **argv) {
 	outputWorkHard(uniqueId, parameters, workHardTravel);
 	timeMe("work hard");
 	
-	output_play_hard(uniqueId, flights, parameters, alliances);
+	auto travels = playHard(alliances, flights, parameters);
+	outputPlayHard(uniqueId, flights, parameters, alliances);
 	timeMe("play hard");
 
 	return 0;
