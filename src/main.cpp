@@ -813,6 +813,7 @@ int main(int argc, char **argv) {
 	Parameters parameters;
 	Alliances alliances;
 	read_parameters(uniqueId, parameters, argc, argv);
+	omp_set_num_threads(parameters.nb_threads);
 //	cout<<"Printing parameters..."<<endl;
 //	print_params(parameters);
 	Flights flights;
