@@ -769,7 +769,8 @@ void parse_alliances(UniqueId<> &uniqueId, Alliances &alliances, string filename
 
 void printTravel(const UniqueId<> &uniqueId, const Travel& travel, ostream& output)
 {
-	output << "Price : " << travel.totalCost << endl;
+	float priceToDisplay = isfinite(travel.totalCost) ? travel.totalCost : 0;
+	output << "Price : " << priceToDisplay << endl;
 
 	for (size_t i = 0; i < travel.flights.size(); i++) {
 		float discount = travel.discounts[i];
