@@ -789,7 +789,7 @@ int main(int argc, char **argv) {
 	timeMe("work hard");
 	
 	auto travels = playHard(alliances, flights, parameters);
-	outputPlayHard(uniqueId, flights, parameters, alliances);
+	outputPlayHard(uniqueId, parameters, travels);
 	timeMe("play hard");
 
 	return 0;
