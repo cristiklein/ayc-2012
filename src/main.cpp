@@ -434,6 +434,8 @@ struct ParametersABCDTravel {
 	Id a, b, c, d;
 	Time tminAB, tmaxAB, tminBC, tmaxBC, tminCD, tmaxCD;
 	Time maxLayover;
+	const vector<Travel> *aToB; //!< Potentially pre-computed values
+	const vector<Travel> *cToD; //!< Potentially pre-computed values
 };
 
 Travel computeBestABCDTravel(const Alliances &alliances, const Flights &flights, const ParametersABCDTravel &p)
@@ -444,32 +446,60 @@ Travel computeBestABCDTravel(const Alliances &alliances, const Flights &flights,
 	float maxToC   = priciestFlight(flights.landings(p.c, p.tminBC, p.tmaxBC));
 	float maxFromC = priciestFlight(flights.takeoffs(p.c, p.tminCD, p.tmaxCD));
 
-	vector<Travel> aToB = computePath(
-		alliances, flights, /* description about the world */
-		p.a, p.b, /* source, destination airport */
-		p.tminAB, p.tmaxAB, /* interval of time during which to fly */
-		p.maxLayover, /* other trip parameters */
-		(maxToB + maxFromB) * 0.3 /* pruning parameter */);
-	vector<Travel> bToC = computePath(
+	vector<Travel> aToB, bToC, cToD;
+	
+	/* A -> B */
+	if (p.aToB == NULL) {
+		aToB = computePath(
+			alliances, flights, /* description about the world */
+			p.a, p.b, /* source, destination airport */
+			p.tminAB, p.tmaxAB, /* interval of time during which to fly */
+			p.maxLayover, /* other trip parameters */
+			(maxToB + maxFromB) * 0.3 /* pruning parameter */);
+	}
+	else {
+		aToB = *p.aToB;
+	}
+
+	/* Update (hopefully reducing) maxB */
+	maxToB = 0;
+	for (const Travel &travel : aToB)
+		maxToB = max(maxToB, travel.flights.back()->cost);
+	
+	/* C -> D */
+	if (p.cToD == NULL) {
+		cToD = computePath(
+			alliances, flights, /* description about the world */
+			p.c, p.d, /* source, destination airport */
+			p.tminCD, p.tmaxCD, /* interval of time during which to fly */
+			p.maxLayover, /* other trip parameters */
+			(maxToC + maxFromC) * 0.3 /* pruning parameter */);
+	}
+	else {
+		cToD = *p.cToD;
+	}
+
+	/* Update (hopefully reducing) maxC */
+	maxFromC = 0;
+	for (const Travel &travel : cToD)
+		maxFromC = max(maxFromC, travel.flights.front()->cost);
+
+	/* B -> C */
+	bToC = computePath(
 		alliances, flights, /* description about the world */
 		p.b, p.c, /* source, destination airport */
 		p.tminBC, p.tmaxBC, /* interval of time during which to fly */
 		p.maxLayover, /* other trip parameters */
 		(maxToB + maxFromB + maxToC + maxFromC) * 0.3 /* pruning parameter */);
-	vector<Travel> cToD = computePath(
-		alliances, flights, /* description about the world */
-		p.c, p.d, /* source, destination airport */
-		p.tminCD, p.tmaxCD, /* interval of time during which to fly */
-		p.maxLayover, /* other trip parameters */
-		(maxToC + maxFromC) * 0.3 /* pruning parameter */);
 
 	return findCheapestAndMerge(alliances, aToB, bToC, cToD);
 }
 
-map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Parameters& parameters)
+map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Parameters& parameters, const vector<Travel> &homeToConf, const vector<Travel> &confToHome)
 {
 	map<Id, Travel> results;
 	int n = parameters.airports_of_interest.size();
+
 	for (int i = 0; i < n; i++) {
 		Id vacation = parameters.airports_of_interest[i];
 		/*
@@ -493,6 +523,10 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 		p1.tmaxCD = parameters.ar_time_max;
 		p1.maxLayover = parameters.max_layover_time;
 
+		/* Add cached values */
+		p1.aToB = NULL;
+		p1.cToD = &confToHome;
+
 		Travel best1 = computeBestABCDTravel(alliances, flights, p1);
 
 		/*
@@ -514,6 +548,10 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 		p2.tminCD = parameters.ar_time_max + parameters.vacation_time_min;
 		p2.tmaxCD = parameters.ar_time_max + parameters.vacation_time_max;
 		p2.maxLayover = parameters.max_layover_time;
+
+		/* Add cached values */
+		p2.aToB = &homeToConf;
+		p2.cToD = NULL;
 
 		Travel best2 = computeBestABCDTravel(alliances, flights, p2);
 
@@ -788,7 +826,7 @@ int main(int argc, char **argv) {
 	outputWorkHard(uniqueId, parameters, workHardTravel);
 	timeMe("work hard");
 	
-	auto travels = playHard(alliances, flights, parameters);
+	auto travels = playHard(alliances, flights, parameters, homeToConf, confToHome);
 	outputPlayHard(uniqueId, parameters, travels);
 	timeMe("play hard");
 
