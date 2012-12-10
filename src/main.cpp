@@ -552,7 +552,10 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 	map<Id, Travel> results;
 	int n = parameters.airports_of_interest.size();
 
-#pragma omp parallel for schedule(dynamic, 1)
+	map<Id, Travel> bests1, bests2;
+
+#pragma omp parallel
+#pragma omp single
 	for (int i = 0; i < n; i++) {
 		Id vacation = parameters.airports_of_interest[i];
 
@@ -581,7 +584,12 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 		p1.aToB = NULL;
 		p1.cToD = &confToHome;
 
-		Travel best1 = computeBestABCDTravel(alliances, flights, p1);
+#pragma omp task shared(alliances, flights) firstprivate(p1) untied
+		{
+			Travel best1 = computeBestABCDTravel(alliances, flights, p1);
+#pragma omp critical
+			bests1[vacation] = best1;
+		}
 
 		/*
 		 * The second part compute a travel from home -> conference -> vacation -> home
@@ -607,18 +615,23 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 		p2.aToB = &homeToConf;
 		p2.cToD = NULL;
 
-		Travel best2 = computeBestABCDTravel(alliances, flights, p2);
-
-		/*
-		 * Compare the two solutions
-		 */
-#pragma omp critical
+#pragma omp task shared(alliances, flights) firstprivate(p2) untied
 		{
-			if (best1.totalCost > best2.totalCost)
-				results[vacation] = best2;
-			else
-				results[vacation] = best1;
+			Travel best2 = computeBestABCDTravel(alliances, flights, p2);
+#pragma omp critical
+			bests2[vacation] = best2;
 		}
+	}
+
+#pragma omp taskwait
+	/*
+	 * Reduce results
+	 */
+	for (Id vacation : parameters.airports_of_interest) {
+		if (bests1[vacation].totalCost > bests2[vacation].totalCost)
+			results[vacation] = bests2[vacation];
+		else
+			results[vacation] = bests1[vacation];
 	}
 	return results;
 }
