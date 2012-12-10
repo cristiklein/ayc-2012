@@ -29,19 +29,17 @@ OBJS=$(SRCS:src/%.cpp=obj/%.o)
 
 all: release
 
-release: objdir $(OBJS)
-	$(COMPILER) $(LDFLAGS) -o $(EXECUTABLE) $(OBJS) $(LDLIBS) 
+release: run
 
-objdir:
-	mkdir -p obj
+run: $(OBJS)
+	$(COMPILER) $(LDFLAGS) -o $(EXECUTABLE) $(OBJS) $(LDLIBS) 
 
 obj/%.o: src/%.cpp
 	$(COMPILER) $(FLAGS) -o $@ -c $<
 
-
 zip:
 ifdef TEAM_ID
-	zip $(strip $(TEAM_ID)).zip -r Makefile src
+	zip $(strip $(TEAM_ID)).zip -r Makefile src obj/.keepme
 else
 	@echo "you need to put your TEAM_ID in the Makefile"
 endif
