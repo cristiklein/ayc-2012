@@ -39,7 +39,7 @@ obj/%.o: src/%.cpp
 
 zip:
 ifdef TEAM_ID
-	zip $(strip $(TEAM_ID)).zip -r Makefile src obj/.keepme
+	zip $(strip $(TEAM_ID)).zip -r Makefile src obj/.keepme README.txt
 else
 	@echo "you need to put your TEAM_ID in the Makefile"
 endif
