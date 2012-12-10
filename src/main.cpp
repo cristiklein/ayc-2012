@@ -328,6 +328,7 @@ Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsA
 
 		vector<Travel>::iterator it;
 
+		/* We can use upper_bound here, because computePath sorts travels by increasing totalCost */
 		it = upper_bound(travelsAB.begin(), travelsAB.end(), maxABToExplore);
 		travelsAB.erase(it, travelsAB.end());
 
@@ -343,9 +344,6 @@ Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsA
 	}
 
 	/* Do cartezian product, do pruning, find best */
-	/* Note: all travels are sorted by totalCost, this is a nice property of computePath
-	 * which allows us to prune travels after a certain cost
-	 */
 	for (const Travel &travelAB : travelsAB) {
 		/* Prune this travel and all travels that follow */
 		if (travelAB.totalCost > maxABToExplore)
