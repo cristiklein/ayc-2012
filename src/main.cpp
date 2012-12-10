@@ -500,6 +500,7 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 	map<Id, Travel> results;
 	int n = parameters.airports_of_interest.size();
 
+#pragma omp parallel for
 	for (int i = 0; i < n; i++) {
 		Id vacation = parameters.airports_of_interest[i];
 		/*
@@ -558,10 +559,13 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 		/*
 		 * Compare the two solutions
 		 */
-		if (best1.totalCost > best2.totalCost)
-			results[vacation] = best2;
-		else
-			results[vacation] = best1;
+#pragma omp critical
+		{
+			if (best1.totalCost > best2.totalCost)
+				results[vacation] = best2;
+			else
+				results[vacation] = best1;
+		}
 	}
 	return results;
 }
