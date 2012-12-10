@@ -351,7 +351,7 @@ Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsA
 	}
 
 	/* Do cartezian product, do pruning, find best */
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic, 1)
 	for (size_t i = 0; i < travelsAB.size(); i++) {
 		const Travel &travelAB = travelsAB[i];
 
@@ -482,15 +482,16 @@ Travel workHard(const Alliances& alliances, const Flights& flights, const Parame
 	return findCheapestAndMerge(alliances, homeToConf, confToHome);
 }
 
-struct ParametersABCDTravel {
+struct ABCDTravelParameters {
 	Id a, b, c, d;
 	Time tminAB, tmaxAB, tminBC, tmaxBC, tminCD, tmaxCD;
 	Time maxLayover;
 	const vector<Travel> *aToB; //!< Potentially pre-computed values
 	const vector<Travel> *cToD; //!< Potentially pre-computed values
 };
+typedef tuple<vector<Travel>, vector<Travel>, vector<Travel>> ABCDTravelResult;
 
-Travel computeBestABCDTravel(const Alliances &alliances, const Flights &flights, const ParametersABCDTravel &p)
+ABCDTravelResult computeABCDTravel(const Alliances &alliances, const Flights &flights, const ABCDTravelParameters &p)
 {
 	/* Get most expensive flights from/to vacation (for pruning) */
 	float maxToB   = priciestFlight(flights.landings(p.b, p.tminAB, p.tmaxAB));
@@ -499,7 +500,7 @@ Travel computeBestABCDTravel(const Alliances &alliances, const Flights &flights,
 	float maxFromC = priciestFlight(flights.takeoffs(p.c, p.tminCD, p.tmaxCD));
 
 	vector<Travel> aToB, bToC, cToD;
-	
+
 	/* A -> B */
 	if (p.aToB == NULL) {
 		aToB = computePath(
@@ -543,8 +544,8 @@ Travel computeBestABCDTravel(const Alliances &alliances, const Flights &flights,
 		p.tminBC, p.tmaxBC, /* interval of time during which to fly */
 		p.maxLayover, /* other trip parameters */
 		(maxToB + maxFromB + maxToC + maxFromC) * 0.3 /* pruning parameter */);
-
-	return findCheapestAndMerge(alliances, aToB, bToC, cToD);
+	
+	return ABCDTravelResult(aToB, bToC, cToD);
 }
 
 map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Parameters& parameters, const vector<Travel> &homeToConf, const vector<Travel> &confToHome)
@@ -552,8 +553,10 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 	map<Id, Travel> results;
 	int n = parameters.airports_of_interest.size();
 
+	map<Id, ABCDTravelResult> blobs1, blobs2;
 	map<Id, Travel> bests1, bests2;
 
+	/* Compute intermediate results */
 #pragma omp parallel
 #pragma omp single
 	for (int i = 0; i < n; i++) {
@@ -563,7 +566,7 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 		 * The first part compute a travel from home -> vacation -> conference -> home
 		 * We'll use the terminology A -> B -> C -> D and AB BC CD for travels
 		 */
-		ParametersABCDTravel p1;
+		ABCDTravelParameters p1;
 
 		/* Cities */
 		p1.a = parameters.from;
@@ -586,15 +589,15 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 
 #pragma omp task shared(alliances, flights) firstprivate(p1) untied
 		{
-			Travel best1 = computeBestABCDTravel(alliances, flights, p1);
+			auto blob1 = computeABCDTravel(alliances, flights, p1);
 #pragma omp critical
-			bests1[vacation] = best1;
+			blobs1[vacation] = blob1;
 		}
 
 		/*
 		 * The second part compute a travel from home -> conference -> vacation -> home
 		 */
-		ParametersABCDTravel p2;
+		ABCDTravelParameters p2;
 
 		/* Cities */
 		p2.a = parameters.from;
@@ -617,13 +620,29 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 
 #pragma omp task shared(alliances, flights) firstprivate(p2) untied
 		{
-			Travel best2 = computeBestABCDTravel(alliances, flights, p2);
+			auto blob2 = computeABCDTravel(alliances, flights, p2);
 #pragma omp critical
-			bests2[vacation] = best2;
+			blobs2[vacation] = blob2;
 		}
 	}
-
 #pragma omp taskwait
+
+	timeMe("computePath");
+
+	/*
+	 * Run time-consuming findCheapest
+	 */
+	for (size_t i = 0; i < parameters.airports_of_interest.size(); i++) {
+		Id vacation = parameters.airports_of_interest[i];
+		auto &thisBlob1 = blobs1[vacation];
+		bests1[vacation] = findCheapestAndMerge(alliances, get<0>(thisBlob1), get<1>(thisBlob1), get<2>(thisBlob1));
+		auto &thisBlob2 = blobs2[vacation];
+		bests2[vacation] = findCheapestAndMerge(alliances, get<0>(thisBlob2), get<1>(thisBlob2), get<2>(thisBlob2));
+
+		timeMe("findCheapest");
+	}
+	timeMe("done findCheapest");
+
 	/*
 	 * Reduce results
 	 */
@@ -633,6 +652,8 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 		else
 			results[vacation] = bests1[vacation];
 	}
+	timeMe("done");
+
 	return results;
 }
 
