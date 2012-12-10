@@ -17,6 +17,10 @@ public:
 		idp.id1 = id1;
 		idp.id2 = id2;
 		alliances.insert(idp.id);
+		
+		idp.id1 = id2;
+		idp.id2 = id1;
+		alliances.insert(idp.id);
 	}
 
 	/*! \brief Return whether id1 and id2 are allied */
