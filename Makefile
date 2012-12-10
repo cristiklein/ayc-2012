@@ -15,7 +15,7 @@ COMPILER ?= $(GCC_PATH)g++
 # using gcc :
 FLAGS ?= -std=c++0x -g -O3 -Wall $(GCC_SUPPFLAGS) -fopenmp
 
-LDFLAGS ?= -g -fopenmp
+LDFLAGS ?= -g -fopenmp -static
 LDLIBS = 
 #example if using Intel® Threading Building Blocks :
 #LDLIBS = -ltbb -ltbbmalloc
