@@ -190,13 +190,15 @@ vector<Travel> computePath(
 				continue;
 
 			/* Avoid cycles */
+			/* Implementation note: we tried accelerating this with an unordered_set,
+			 * but we would actually observe a 2x slowdown */
+			if (newFlight.to == from)
+				continue;
+
 			bool wasHereBefore = false;
-			for (const Segment *s = seg; s != NULL; s = s->prev) {
-				if (s->flight->to == newFlight.to) {
+			for (const Segment *s = seg; s != NULL && !wasHereBefore; s = s->prev)
+				if (s->flight->to == newFlight.to)
 					wasHereBefore = true;
-					break;
-				}
-			}
 			if (wasHereBefore)
 				continue;
 
