@@ -133,8 +133,6 @@ vector<Travel> computePath(
 {
 	struct Segment {
 		const struct Segment *prev; //!< pointer to previous segment
-		Id airport; //!< airport in which we are now
-		Time landingTime; //!< time from which we can take next plan
 		const Flight *flight; //!< flight taken to reach this city
 		float prevTotalCost; //!< total cost - minus price (cost * discount) of last flight (may be different from prev->totalCost, if a lower discount was applied to prev->flight)
 		float totalCost; //!< total cost
@@ -154,8 +152,6 @@ vector<Travel> computePath(
 
 		Segment *seg = new Segment();
 		seg->prev = NULL;
-		seg->airport = newFlight.to;
-		seg->landingTime = newFlight.landingTime;
 		seg->flight = &newFlight;
 		seg->prevTotalCost = 0;
 		seg->totalCost = newFlight.cost;
@@ -169,21 +165,25 @@ vector<Travel> computePath(
 		const Segment *seg = queue.top().second;
 		queue.pop();
 
+		/* Faster retrieval */
+		Id airport = seg->flight->to;
+		Time landingTime = seg->flight->landingTime;
+
 		/* Pruning */
 		if (seg->totalCost - maxDiscount > cheapestTravel)
 			break;
 
 		/* Check if we reached our destination */
-		if (seg->airport == to) {
+		if (airport == to) {
 			finalSegments.push_back(seg);
 			cheapestTravel = min(cheapestTravel, seg->totalCost);
 			continue;
 		}
 
 		/* Where can we go to from here? */
-		auto range = flights.takeoffs(seg->airport,
-			seg->landingTime,
-			seg->landingTime + maxLayover);
+		auto range = flights.takeoffs(airport,
+			landingTime,
+			landingTime + maxLayover);
 		for(const Flight &newFlight : range) {
 			/* Out of time? */
 			if (newFlight.landingTime > tMax)
@@ -192,7 +192,7 @@ vector<Travel> computePath(
 			/* Avoid cycles */
 			bool wasHereBefore = false;
 			for (const Segment *s = seg; s != NULL; s = s->prev) {
-				if (s->airport == newFlight.to) {
+				if (s->flight->to == newFlight.to) {
 					wasHereBefore = true;
 					break;
 				}
@@ -203,8 +203,6 @@ vector<Travel> computePath(
 			/* Everything seems okey, prepare new segment to be added to the queue */
 			Segment *newSeg = new Segment();
 			newSeg->prev = seg;
-			newSeg->airport = newFlight.to;
-			newSeg->landingTime = newFlight.landingTime;
 			newSeg->flight = &newFlight;
 
 			/* Compute cost (quite tricky, but works) */
