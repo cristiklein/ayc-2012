@@ -304,8 +304,15 @@ Travel mergeTravels(const Alliances &alliances, const Travel &travelAB, const Tr
 
 Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsAB, vector<Travel> &travelsBC, vector<Travel> &travelsCD)
 {
-	const Travel *bestTravelAB = NULL, *bestTravelBC = NULL, *bestTravelCD = NULL;
-	float bestCost = INFINITY;
+	const Travel *localBestTravelAB[64], *localBestTravelBC[64], *localBestTravelCD[64];
+	float localBestCost[64];
+	
+	for (int i = 0; i < 64; i++) {
+		localBestCost[i] = INFINITY;
+		localBestTravelAB[i] = NULL;
+		localBestTravelBC[i] = NULL;
+		localBestTravelCD[i] = NULL;
+	}
 
 	/* Variables to store information for "fine" pruning */
 	float maxToB, maxFromB, maxToC, maxFromC, minAB, minBC, minCD;
@@ -344,10 +351,9 @@ Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsA
 	}
 
 	/* Do cartezian product, do pruning, find best */
-	for (const Travel &travelAB : travelsAB) {
-		/* Prune this travel and all travels that follow */
-		if (travelAB.totalCost > maxABToExplore)
-			break;
+#pragma omp parallel for
+	for (size_t i = 0; i < travelsAB.size(); i++) {
+		const Travel &travelAB = travelsAB[i];
 
 		/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest choice */
 		const Flight &lastFlight = *travelAB.flights.back();
@@ -371,14 +377,27 @@ Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsA
 					continue;
 
 				float newCost = computeCostAfterMerger(alliances, travelAB, travelBC, travelCD);
-				if (newCost < bestCost) {
-					bestCost = newCost;
-					bestTravelAB = &travelAB;
-					bestTravelBC = &travelBC;
-					bestTravelCD = &travelCD;
+				int tid = omp_get_thread_num();
+				if (newCost < localBestCost[tid]) {
+					localBestCost[tid] = newCost;
+					localBestTravelAB[tid] = &travelAB;
+					localBestTravelBC[tid] = &travelBC;
+					localBestTravelCD[tid] = &travelCD;
 				}
 			}
 
+		}
+	}
+
+	/* Reduce */
+	float bestCost = INFINITY;
+	const Travel *bestTravelAB = NULL, *bestTravelBC = NULL, *bestTravelCD = NULL;
+	for (int i = 0; i < 64; i++) {
+		if (localBestCost[i] < bestCost) {
+			bestCost = localBestCost[i];
+			bestTravelAB = localBestTravelAB[i];
+			bestTravelBC = localBestTravelBC[i];
+			bestTravelCD = localBestTravelCD[i];
 		}
 	}
 
