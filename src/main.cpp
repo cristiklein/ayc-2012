@@ -71,6 +71,10 @@ struct Travel {
 	float totalCost; //!< Total cost of the travel
 };
 
+/* Used for bisection */
+inline bool operator<(float cost, const Travel &travel) { return cost < travel.totalCost; }
+inline bool operator<(const Travel &travel, float cost) { return travel.totalCost < cost; }
+
 float priciestFirstFlight(const vector<Travel> &travels)
 {
 	float result = 0;
@@ -298,22 +302,45 @@ Travel mergeTravels(const Alliances &alliances, const Travel &travelAB, const Tr
 	return mergedTravel;
 }
 
-Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &travelsAB, const vector<Travel> &travelsBC, const vector<Travel> &travelsCD)
+Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsAB, vector<Travel> &travelsBC, vector<Travel> &travelsCD)
 {
 	const Travel *bestTravelAB = NULL, *bestTravelBC = NULL, *bestTravelCD = NULL;
 	float bestCost = INFINITY;
 
-	/* Compute valid prunings */
-	float maxToB   = priciestLastFlight(travelsAB);
-	float maxFromB = priciestFirstFlight(travelsBC);
-	float maxToC   = priciestLastFlight(travelsBC);
-	float maxFromC = priciestFirstFlight(travelsCD);
-	float minAB = cheapestTravel(travelsAB);
-	float minBC = cheapestTravel(travelsBC);
-	float minCD = cheapestTravel(travelsCD);
-	float maxABToExplore = minAB + 0.3 * maxToB + 0.3 * maxFromB;
-	float maxCDToExplore = minCD + 0.3 * maxToC + 0.3 * maxFromC;
-	float maxBCToExplore = minBC + 0.3 * maxToB + 0.3 * maxFromB + 0.3 * maxToC + 0.3 * maxFromC;
+	/* Variables to store information for "fine" pruning */
+	float maxToB, maxFromB, maxToC, maxFromC, minAB, minBC, minCD;
+
+	/* "Coarse pruning */
+	while (true) {
+		int prevSize = travelsAB.size() + travelsBC.size() + travelsCD.size();
+
+		maxToB   = priciestLastFlight(travelsAB);
+		maxFromB = priciestFirstFlight(travelsBC);
+		maxToC   = priciestLastFlight(travelsBC);
+		maxFromC = priciestFirstFlight(travelsCD);
+		minAB = cheapestTravel(travelsAB);
+		minBC = cheapestTravel(travelsBC);
+		minCD = cheapestTravel(travelsCD);
+
+		float maxABToExplore = minAB + 0.3 * maxToB + 0.3 * maxFromB;
+		float maxCDToExplore = minCD + 0.3 * maxToC + 0.3 * maxFromC;
+		float maxBCToExplore = minBC + 0.3 * maxToB + 0.3 * maxFromB + 0.3 * maxToC + 0.3 * maxFromC;
+
+		vector<Travel>::iterator it;
+
+		it = upper_bound(travelsAB.begin(), travelsAB.end(), maxABToExplore);
+		travelsAB.erase(it, travelsAB.end());
+
+		it = upper_bound(travelsBC.begin(), travelsBC.end(), maxBCToExplore);
+		travelsBC.erase(it, travelsBC.end());
+
+		it = upper_bound(travelsCD.begin(), travelsCD.end(), maxCDToExplore);
+		travelsCD.erase(it, travelsCD.end());
+
+		int newSize = travelsAB.size() + travelsBC.size() + travelsCD.size();
+		if (newSize == prevSize)
+			break;
+	}
 
 	/* Do cartezian product, do pruning, find best */
 	/* Note: all travels are sorted by totalCost, this is a nice property of computePath
@@ -330,20 +357,12 @@ Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &tr
 			continue;
 
 		for (const Travel &travelCD : travelsCD) {
-			/* Prune this travel and all travels that follow */
-			if (travelCD.totalCost > maxCDToExplore)
-				break;
-
 			/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest choice */
 			const Flight &firstFlight = *travelCD.flights.front();
 			if (travelCD.totalCost - 0.3 * firstFlight.cost - maxToC * 0.3 > minCD)
 				continue;
 
 			for (const Travel &travelBC : travelsBC) {
-				/* Prune this travel and all travels that follow */
-				if (travelBC.totalCost > maxBCToExplore)
-					break;
-
 				/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest choice */
 				const Flight &lastFlight = *travelBC.flights.back();
 				const Flight &firstFlight = *travelBC.flights.front();
