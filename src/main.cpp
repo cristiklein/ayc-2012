@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <iostream>
 #include <cstdlib>
+#include <omp.h>
 #include <string>
 #include <list>
 #include <map>
@@ -495,14 +496,26 @@ Travel computeBestABCDTravel(const Alliances &alliances, const Flights &flights,
 	return findCheapestAndMerge(alliances, aToB, bToC, cToD);
 }
 
-map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Parameters& parameters, const vector<Travel> &homeToConf, const vector<Travel> &confToHome)
+map<Id, Travel> playHard(const Alliances &globalAlliances, const Flights& globalFlights, Parameters& parameters, const vector<Travel> &homeToConf, const vector<Travel> &confToHome)
 {
 	map<Id, Travel> results;
 	int n = parameters.airports_of_interest.size();
 
+	vector<Alliances *> coreLocalAlliances(omp_get_num_threads());
+	vector<Flights   *> coreLocalFlights(omp_get_num_threads());
+
+#pragma omp parallel
+	{
+		coreLocalAlliances[omp_get_thread_num()] = new Alliances(globalAlliances);
+		coreLocalFlights[omp_get_thread_num()]   = new Flights(globalFlights);
+	}
+
 #pragma omp parallel for
 	for (int i = 0; i < n; i++) {
 		Id vacation = parameters.airports_of_interest[i];
+		const Alliances &alliances = *coreLocalAlliances[omp_get_thread_num()];
+		const Flights   &flights   = *coreLocalFlights[omp_get_thread_num()];
+
 		/*
 		 * The first part compute a travel from home -> vacation -> conference -> home
 		 * We'll use the terminology A -> B -> C -> D and AB BC CD for travels
