@@ -431,26 +431,26 @@ Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &tr
 	}
 }
 
-Travel workHard(const Alliances& alliances, const Flights& flights, const Parameters& parameters)
+Travel workHard(const Alliances& alliances, const Flights& flights, const Parameters& parameters, vector<Travel> &homeToConf, vector<Travel> &confToHome)
 {
 	/* Get most expensive flights from/to conference */
 	float maxToConf   = priciestFlight(flights.landings(parameters.to, parameters.dep_time_min, parameters.dep_time_max));
 	float maxFromConf = priciestFlight(flights.takeoffs(parameters.to, parameters.ar_time_min, parameters.ar_time_max));
 
-	vector<Travel> inbounds = computePath(
+	homeToConf = computePath(
 		alliances, flights, /* description about the world */
 		parameters.from, parameters.to, /* source, destination airport */
 		parameters.dep_time_min, parameters.dep_time_max, /* interval of time during which to fly */
 		parameters.max_layover_time, /* other trip parameters */
 		(maxToConf + maxFromConf) * 0.3 /* pruning parameter */);
-	vector<Travel> outbounds = computePath(
+	confToHome = computePath(
 		alliances, flights,
 		parameters.to, parameters.from,
 		parameters.ar_time_min, parameters.ar_time_max,
 		parameters.max_layover_time,
 		(maxToConf + maxFromConf) * 0.3 /* pruning parameter */);
 
-	return findCheapestAndMerge(alliances, inbounds, outbounds);
+	return findCheapestAndMerge(alliances, homeToConf, confToHome);
 }
 
 struct ParametersABCDTravel {
@@ -812,12 +812,14 @@ int main(int argc, char **argv) {
 //	cout<<"Printing alliances..."<<endl;
 //	print_alliances(alliances);
 	timeMe("parse alliances");
-	output_play_hard(uniqueId, flights, parameters, alliances);
-	timeMe("play hard");
 
-	Travel workHardTravel = workHard(alliances, flights, parameters);
+	std::vector<Travel> homeToConf, confToHome; /* cache some results from workHard for playHard */
+	Travel workHardTravel = workHard(alliances, flights, parameters, homeToConf, confToHome);
 	outputWorkHard(uniqueId, parameters, workHardTravel);
 	timeMe("work hard");
+	
+	output_play_hard(uniqueId, flights, parameters, alliances);
+	timeMe("play hard");
 
 	return 0;
 }
