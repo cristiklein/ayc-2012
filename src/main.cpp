@@ -396,7 +396,7 @@ Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsA
 		}
 	}
 
-	if (bestTravelAB)
+	if (isfinite(bestCost))
 		return mergeTravels(alliances, *bestTravelAB, *bestTravelBC, *bestTravelCD);
 	else {
 		Travel travel = Travel();
