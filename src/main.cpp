@@ -304,10 +304,14 @@ Travel mergeTravels(const Alliances &alliances, const Travel &travelAB, const Tr
 
 Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsAB, vector<Travel> &travelsBC, vector<Travel> &travelsCD)
 {
-	const Travel *localBestTravelAB[64], *localBestTravelBC[64], *localBestTravelCD[64];
-	float localBestCost[64];
+	/* We need this because OpenMP does not have a construct to customize reduction
+	 * Should we use TBB next time?
+	 */
+	int maxThreads = omp_get_max_threads();
+	const Travel *localBestTravelAB[maxThreads], *localBestTravelBC[maxThreads], *localBestTravelCD[maxThreads];
+	float localBestCost[maxThreads];
 	
-	for (int i = 0; i < 64; i++) {
+	for (int i = 0; i < maxThreads; i++) {
 		localBestCost[i] = INFINITY;
 		localBestTravelAB[i] = NULL;
 		localBestTravelBC[i] = NULL;
@@ -392,7 +396,7 @@ Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsA
 	/* Reduce */
 	float bestCost = INFINITY;
 	const Travel *bestTravelAB = NULL, *bestTravelBC = NULL, *bestTravelCD = NULL;
-	for (int i = 0; i < 64; i++) {
+	for (int i = 0; i < maxThreads; i++) {
 		if (localBestCost[i] < bestCost) {
 			bestCost = localBestCost[i];
 			bestTravelAB = localBestTravelAB[i];
