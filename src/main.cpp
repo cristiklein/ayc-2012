@@ -304,19 +304,9 @@ Travel mergeTravels(const Alliances &alliances, const Travel &travelAB, const Tr
 
 Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsAB, vector<Travel> &travelsBC, vector<Travel> &travelsCD)
 {
-	/* We need this because OpenMP does not have a construct to customize reduction
-	 * Should we use TBB next time?
-	 */
-	int maxThreads = omp_get_max_threads();
-	const Travel *localBestTravelAB[maxThreads], *localBestTravelBC[maxThreads], *localBestTravelCD[maxThreads];
-	float localBestCost[maxThreads];
-	
-	for (int i = 0; i < maxThreads; i++) {
-		localBestCost[i] = INFINITY;
-		localBestTravelAB[i] = NULL;
-		localBestTravelBC[i] = NULL;
-		localBestTravelCD[i] = NULL;
-	}
+	/* Variables to store best solution */
+	float bestCost = INFINITY;
+	const Travel *bestTravelAB = NULL, *bestTravelBC = NULL, *bestTravelCD = NULL;
 
 	/* Variables to store information for "fine" pruning */
 	float maxToB, maxFromB, maxToC, maxFromC, minAB, minBC, minCD;
@@ -357,6 +347,12 @@ Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsA
 	/* Do cartezian product, do pruning, find best */
 #pragma omp parallel for schedule(dynamic, 1)
 	for (size_t i = 0; i < travelsAB.size(); i++) {
+		/* To avoid data dependency between threads, we first compute a
+		 * thread-local best, then merge it into the global best in a critical section
+		 */
+		const Travel *localBestTravelAB = NULL, *localBestTravelBC = NULL, *localBestTravelCD = NULL;
+		float localBestCost = INFINITY;
+
 		const Travel &travelAB = travelsAB[i];
 
 		/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest choice */
@@ -381,27 +377,22 @@ Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsA
 					continue;
 
 				float newCost = computeCostAfterMerger(alliances, travelAB, travelBC, travelCD);
-				int tid = omp_get_thread_num();
-				if (newCost < localBestCost[tid]) {
-					localBestCost[tid] = newCost;
-					localBestTravelAB[tid] = &travelAB;
-					localBestTravelBC[tid] = &travelBC;
-					localBestTravelCD[tid] = &travelCD;
+				if (newCost < localBestCost) {
+					localBestCost = newCost;
+					localBestTravelAB = &travelAB;
+					localBestTravelBC = &travelBC;
+					localBestTravelCD = &travelCD;
 				}
 			}
 
 		}
-	}
-
-	/* Reduce */
-	float bestCost = INFINITY;
-	const Travel *bestTravelAB = NULL, *bestTravelBC = NULL, *bestTravelCD = NULL;
-	for (int i = 0; i < maxThreads; i++) {
-		if (localBestCost[i] < bestCost) {
-			bestCost = localBestCost[i];
-			bestTravelAB = localBestTravelAB[i];
-			bestTravelBC = localBestTravelBC[i];
-			bestTravelCD = localBestTravelCD[i];
+		/* Reduce */
+#pragma omp critical
+		if (localBestCost < bestCost) {
+			bestCost = localBestCost;
+			bestTravelAB = localBestTravelAB;
+			bestTravelBC = localBestTravelBC;
+			bestTravelCD = localBestTravelCD;
 		}
 	}
 
