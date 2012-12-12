@@ -688,6 +688,8 @@ time_t convert_string_to_timestamp(const string &s){
  * \param parameters Represents the structure that will be filled with the parameters.
  */
 void read_parameters(UniqueId<> &uniqueId, Parameters& parameters, int argc, char **argv){
+	parameters.nb_threads = 0;
+
 	for(int i=0; i<argc; i++){
 		string current_parameter = argv[i];
 		if(current_parameter == "-from"){
@@ -894,7 +896,8 @@ int main(int argc, char **argv) {
 	Parameters parameters;
 	Alliances alliances;
 	read_parameters(uniqueId, parameters, argc, argv);
-	omp_set_num_threads(parameters.nb_threads);
+	if (parameters.nb_threads > 0)
+		omp_set_num_threads(parameters.nb_threads);
 //	cout<<"Printing parameters..."<<endl;
 //	print_params(parameters);
 	Flights flights;
