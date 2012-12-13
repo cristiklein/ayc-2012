@@ -49,33 +49,12 @@ vector<Travel> computePath(
 		maxDiscount)[to];
 }
 
-
-Travel workHard(const Alliances& alliances, const Flights& flights, const Parameters& parameters, vector<Travel> &homeToConf, vector<Travel> &confToHome)
+Travel workHard(const Alliances& alliances, const Flights& flights, const Parameters& parameters, const vector<Travel> &homeToConf, const vector<Travel> &confToHome)
 {
-	/* Get most expensive flights from/to conference */
-	float maxToConf   = priciestFlight(flights.landings(parameters.to, parameters.dep_time_min, parameters.dep_time_max));
-	float maxFromConf = priciestFlight(flights.takeoffs(parameters.to, parameters.ar_time_min, parameters.ar_time_max));
-
-	timeMe("start workHard");
-	homeToConf = computePath(
-		alliances, flights, /* description about the world */
-		parameters.from, parameters.to, /* source, destination airport */
-		parameters.dep_time_min, parameters.dep_time_max, /* interval of time during which to fly */
-		parameters.max_layover_time, /* other trip parameters */
-		(maxToConf + maxFromConf) * 0.3 /* pruning parameter */);
-	timeMe("homeToConf");
-	confToHome = computePath(
-		alliances, flights,
-		parameters.to, parameters.from,
-		parameters.ar_time_min, parameters.ar_time_max,
-		parameters.max_layover_time,
-		(maxToConf + maxFromConf) * 0.3 /* pruning parameter */);
-	timeMe("confToHome");
-
 	return findCheapestAndMerge(alliances, homeToConf, confToHome);
 }
 
-map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Parameters& parameters, const vector<Travel> &homeToConf, const vector<Travel> &confToHome)
+map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Parameters& parameters, vector<Travel> &homeToConf, vector<Travel> &confToHome)
 {
 	set<Id> vacations = set<Id>(parameters.airports_of_interest.begin(),
 		parameters.airports_of_interest.end());
@@ -95,7 +74,7 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 		Id a = parameters.from;
 		set<Id> bs = vacations;
 		Id c = parameters.to;
-		// Id d = parameters.from; /* unused, already computed in workHard */
+		Id d = parameters.from; /* unused, already computed in workHard */
 
 		/* Compute valid travel times */
 		Time tminAB = parameters.dep_time_min - parameters.vacation_time_max;
@@ -132,6 +111,14 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 			tminBC, tmaxBC, /* interval of time during which to fly */
 			maxLayover, /* other trip parameters */
 			(maxToB + maxFromB + maxToC + maxFromC) * 0.3 /* pruning parameter */));
+
+#pragma omp task untied shared(alliances, flights, confToHome)
+		confToHome = computePath(
+			alliances, flights,
+			c, d,
+			tminCD, tmaxCD,
+			maxLayover,
+			(maxToC + maxFromC) * 0.3 /* pruning parameter */);
 	}
 	
 	/*
@@ -140,7 +127,7 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 	 */
 	{
 		/* Cities */
-		// Id a = parameters.from; /* unused, already computed in workHard */
+		Id a = parameters.from; /* unused, already computed in workHard */
 		Id b = parameters.to;
 		set<Id> cs = vacations;
 		Id d = parameters.from;
@@ -164,6 +151,14 @@ map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Par
 			maxToC   = max(maxToC, priciestFlight(flights.landings(c, tminBC, tmaxBC)));
 			maxFromC = max(maxFromC, priciestFlight(flights.takeoffs(c, tminCD, tmaxCD)));
 		}
+
+#pragma omp task untied shared(alliances, flights, homeToConf)
+		homeToConf = computePath(
+			alliances, flights, /* description about the world */
+			a, b, /* source, destination airport */
+			tminAB, tmaxAB, /* interval of time during which to fly */
+			maxLayover, /* other trip parameters */
+			(maxToB + maxFromB) * 0.3 /* pruning parameter */);
 
 #pragma omp task untied shared(alliances, flights, confToVacations)
 		confToVacations = std::move(computePath(
@@ -476,14 +471,15 @@ int main(int argc, char **argv) {
 //	print_alliances(alliances);
 	timeMe("parse alliances");
 
-	std::vector<Travel> homeToConf, confToHome; /* cache some results from workHard for playHard */
-	Travel workHardTravel = workHard(alliances, flights, parameters, homeToConf, confToHome);
-	outputWorkHard(uniqueId, parameters, workHardTravel);
-	timeMe("work hard");
-	
+	std::vector<Travel> homeToConf, confToHome; /* cache some results from playHard for workHard */
+
 	auto travels = playHard(alliances, flights, parameters, homeToConf, confToHome);
 	outputPlayHard(uniqueId, parameters, travels);
 	timeMe("play hard");
+
+	Travel workHardTravel = workHard(alliances, flights, parameters, homeToConf, confToHome);
+	outputWorkHard(uniqueId, parameters, workHardTravel);
+	timeMe("work hard");
 
 	return 0;
 }
