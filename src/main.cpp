@@ -26,106 +26,11 @@
 #include "TimeMe.hh"
 #include "UniqueId.hh"
 
+#include "ComputePathDirect.hh"
+#include "ComputePathReverse.hh"
+#include "PlannerMergers.hh"
+
 namespace Planner {
-
-using namespace std;
-
-/* Instantiate templates */
-typedef ::Alliances<> Alliances;
-typedef ::Flight<> Flight;
-typedef ::Flights<> Flights;
-typedef ::UniqueId<>::Id Id;
-typedef ::UniqueId<>::Name Name;
-typedef unsigned long Time;
-typedef float Cost;
-
-/**
- * \struct Parameters
- * \brief Store the program's parameters.
- * This structure don't need to be modified but feel free to change it if you want.
- */
-struct Parameters{
-	Id from;/*!< The city where the travel begins */
-	Id to;/*!< The city where the conference takes place */
-	unsigned long dep_time_min;/*!< The minimum departure time for the conference (epoch). No flight towards the conference's city must be scheduled before this time. */
-	unsigned long dep_time_max;/*!< The maximum departure time for the conference (epoch). No flight towards the conference's city must be scheduled after this time.  */
-	unsigned long ar_time_min;/*!< The minimum arrival time after the conference (epoch). No flight from the conference's city must be scheduled before this time.  */
-	unsigned long ar_time_max;/*!< The maximum arrival time after the conference (epoch). No flight from the conference's city must be scheduled after this time.  */
-	unsigned long max_layover_time;/*!< You don't want to wait more than this amount of time at the airport between 2 flights (in seconds) */
-	unsigned long vacation_time_min;/*!< Your minimum vacation time (in seconds). You can't be in a plane during this time. */
-	unsigned long vacation_time_max;/*!< Your maximum vacation time (in seconds). You can't be in a plane during this time. */
-	vector<Id> airports_of_interest;/*!< The list of cities you are interested in. */
-	string flights_file;/*!< The name of the file containing the flights. */
-	string alliances_file;/*!< The name of the file containing the company alliances. */
-	string work_hard_file;/*!< The file used to output the work hard result. */
-	string play_hard_file;/*!< The file used to output the play hard result. */
-	int nb_threads;/*!< The maximum number of worker threads */
-};
-
-/*!
- * \brief Store a travel
- */
-struct Travel {
-	vector<const Flight *> flights; //!< List of flights
-	vector<float> discounts; //!< Applied discounts
-	float totalCost; //!< Total cost of the travel
-};
-
-/* Used for bisection */
-inline bool operator<(float cost, const Travel &travel) { return cost < travel.totalCost; }
-inline bool operator<(const Travel &travel, float cost) { return travel.totalCost < cost; }
-
-float priciestFirstFlight(const vector<Travel> &travels)
-{
-	float result = 0;
-	for (const Travel &travel : travels) {
-		float cost = travel.flights.front()->cost;
-		if (result < cost)
-			result = cost;
-	}
-	return result;
-}
-
-float priciestLastFlight(const vector<Travel> &travels)
-{
-	float result = 0;
-	for (const Travel &travel : travels) {
-		float cost = travel.flights.back()->cost;
-		if (result < cost)
-			result = cost;
-	}
-	return result;
-}
-
-float cheapestTravel(const vector<Travel> &travels)
-{
-	float result = INFINITY;
-	for (const Travel &travel : travels) {
-		float cost = travel.totalCost;
-		if (result > cost)
-			result = cost;
-	}
-	return result;
-}
-
-float priciestFlight(const Flights::Range &flights)
-{
-	float result = 0;
-	for (const Flight &flight : flights) {
-		if (result < flight.cost)
-			result = flight.cost;
-	}
-	return result;
-}
-
-float getDiscount(const Alliances &alliances, const Flight &f1, const Flight &f2)
-{
-	if (f1.company == f2.company)
-		return 0.7;
-	if (alliances.areAllied(f1.company, f2.company))
-		return 0.8;
-	return 1;
-}
 
 vector<Travel> computePath(
 	const Alliances& alliances,
@@ -135,325 +40,15 @@ vector<Travel> computePath(
 	Time maxLayover,
 	Cost maxDiscount)
 {
-	struct Segment {
-		const struct Segment *prev; //!< pointer to previous segment
-		const Flight *flight; //!< flight taken to reach this city
-		float prevTotalCost; //!< total cost - minus price (cost * discount) of last flight (may be different from prev->totalCost, if a lower discount was applied to prev->flight)
-		float totalCost; //!< total cost
-		float discount; //!< discount applied to last flight (i.e., the one in flight)
-	};
-
-	vector<const Segment *> allSegments; //!< Store all segments for garbage collection
-	priority_queue<pair<float, const Segment *>> queue; //!< Queue of segments to process
-
-	/* Add initial segments to queue */
-	auto range = flights.takeoffs(from,
-		tMin,
-		numeric_limits<Time>::max());
-	for(const Flight &newFlight : range) {
-		if (newFlight.landingTime > tMax)
-			continue;
-
-		Segment *seg = new Segment();
-		seg->prev = NULL;
-		seg->flight = &newFlight;
-		seg->prevTotalCost = 0;
-		seg->totalCost = newFlight.cost;
-		seg->discount = 1;
-		queue.push(pair<float, const Segment *>(-seg->totalCost, seg));
-	}
-
-	float cheapestTravel = INFINITY;
-	vector<const Segment *> finalSegments;
-	while (!queue.empty()) {
-		const Segment *seg = queue.top().second;
-		queue.pop();
-
-		/* Faster retrieval */
-		Id airport = seg->flight->to;
-		Time landingTime = seg->flight->landingTime;
-
-		/* Pruning */
-		if (seg->totalCost - maxDiscount > cheapestTravel)
-			break;
-
-		/* Check if we reached our destination */
-		if (airport == to) {
-			finalSegments.push_back(seg);
-			cheapestTravel = min(cheapestTravel, seg->totalCost);
-			continue;
-		}
-
-		/* Where can we go to from here? */
-		auto range = flights.takeoffs(airport,
-			landingTime,
-			landingTime + maxLayover);
-		for(const Flight &newFlight : range) {
-			/* Out of time? */
-			if (newFlight.landingTime > tMax)
-				continue;
-
-			/* Avoid cycles */
-			/* Implementation note: we tried accelerating this with an unordered_set,
-			 * but we would actually observe a 2x slowdown */
-			if (newFlight.to == from)
-				continue;
-
-			bool wasHereBefore = false;
-			for (const Segment *s = seg; s != NULL && !wasHereBefore; s = s->prev)
-				if (s->flight->to == newFlight.to)
-					wasHereBefore = true;
-			if (wasHereBefore)
-				continue;
-
-			/* Everything seems okey, prepare new segment to be added to the queue */
-			Segment *newSeg = new Segment();
-			newSeg->prev = seg;
-			newSeg->flight = &newFlight;
-
-			/* Compute cost (quite tricky, but works) */
-			float discount = getDiscount(alliances, newFlight, *seg->flight);
-			newSeg->prevTotalCost = seg->prevTotalCost + seg->flight->cost * min(discount, seg->discount);
-			newSeg->totalCost = newSeg->prevTotalCost + newSeg->flight->cost * discount;
-			newSeg->discount = discount;
-
-			/* Done preparing new segment, add to queue */
-			allSegments.push_back(newSeg);
-			queue.push(make_pair<float, const Segment *>(-newSeg->totalCost, newSeg));
-		}
-	}
-
-	/* Store segments in a nice travel structure
-	 * There is quite complex machinery for fast recomputation of discounts
-	 */
-	vector<Travel> travels;
-	for (const Segment *seg : finalSegments) {
-		Travel travel;
-		float lastDiscount = 1;
-		for (const Segment *s = seg; s != NULL && s->flight != NULL; s = s->prev) {
-			travel.flights.push_back(s->flight);
-			float discount = 1;
-			if (s->prev && s->prev->flight)
-				discount = getDiscount(alliances, *s->flight, *s->prev->flight);
-			travel.discounts.push_back(min(discount, lastDiscount));
-			lastDiscount = discount;
-		}
-		travel.totalCost = seg->totalCost;
-		reverse(travel.flights.begin(), travel.flights.end());
-		reverse(travel.discounts.begin(), travel.discounts.end());
-		travels.push_back(travel);
-	}
-
-	for (const Segment *s : allSegments)
-		delete s;
-	return travels;
+	set<Id> destinationSet;
+	destinationSet.insert(to);
+	return computePath(alliances, flights,
+		from, destinationSet,
+		tMin, tMax,
+		maxLayover,
+		maxDiscount)[to];
 }
 
-float computeCostAfterMerger(const Alliances &alliances, const Travel &travelAB, const Travel &travelBC, const Travel &travelCD = Travel())
-{
-	float totalCost = travelAB.totalCost + travelBC.totalCost + travelCD.totalCost;
-
-	float discountInB = getDiscount(alliances, *travelAB.flights.back(), *travelBC.flights.front());
-	float prevDiscountAB = travelAB.discounts.back();
-	float prevDiscountBC = travelBC.discounts.front();
-	totalCost -= (prevDiscountAB - min(prevDiscountAB, discountInB)) * travelAB.flights.back()->cost;
-	totalCost -= (prevDiscountBC - min(prevDiscountBC, discountInB)) * travelBC.flights.front()->cost;
-
-	if (travelCD.flights.size()) {
-		float discountInC = getDiscount(alliances, *travelBC.flights.back(), *travelCD.flights.front());
-		float prevDiscountBC = travelBC.discounts.back();
-		if (travelBC.discounts.size() == 1) /* if travelBC only have one single flight */
-			prevDiscountBC = min(prevDiscountBC, discountInB); /* make sure we don't apply the discount on it twice */
-		float prevDiscountCD = travelCD.discounts.front();
-		totalCost -= (prevDiscountBC - min(prevDiscountBC, discountInC)) * travelBC.flights.back()->cost;
-		totalCost -= (prevDiscountCD - min(prevDiscountCD, discountInC)) * travelCD.flights.front()->cost;
-	}
-
-	return totalCost;
-}
-
-Travel mergeTravels(const Alliances &alliances, const Travel &travelAB, const Travel &travelBC, const Travel &travelCD = Travel())
-{
-	/* Create a new travel with all the flights and discounts */
-	Travel mergedTravel = travelAB;
-
-	mergedTravel.flights.insert  (mergedTravel.flights.end()  , travelBC.flights.begin()  , travelBC.flights.end());
-	mergedTravel.discounts.insert(mergedTravel.discounts.end(), travelBC.discounts.begin(), travelBC.discounts.end());
-
-	if (travelCD.flights.size()) {
-		mergedTravel.flights.insert  (mergedTravel.flights.end()  , travelCD.flights.begin()  , travelCD.flights.end());
-		mergedTravel.discounts.insert(mergedTravel.discounts.end(), travelCD.discounts.begin(), travelCD.discounts.end());
-	}
-
-	/* Update discounts */
-	mergedTravel.discounts[0] = 1;
-	for (size_t i = 1; i < mergedTravel.flights.size(); i++) {
-		float discount = getDiscount(alliances, *mergedTravel.flights[i-1], *mergedTravel.flights[i]);
-		mergedTravel.discounts[i-1] = min(mergedTravel.discounts[i-1], discount);
-		mergedTravel.discounts[i] = discount;
-	}
-
-	/* Recompute total */
-	float totalCost = 0;
-	for (size_t i = 0; i < mergedTravel.flights.size(); i++)
-		totalCost += mergedTravel.discounts[i] * mergedTravel.flights[i]->cost;
-	mergedTravel.totalCost = totalCost;
-
-	return mergedTravel;
-}
-
-Travel findCheapestAndMerge(const Alliances &alliances, vector<Travel> &travelsAB, vector<Travel> &travelsBC, vector<Travel> &travelsCD)
-{
-	/* Variables to store best solution */
-	float bestCost = INFINITY;
-	const Travel *bestTravelAB = NULL, *bestTravelBC = NULL, *bestTravelCD = NULL;
-
-	/* Variables to store information for "fine" pruning */
-	float maxToB, maxFromB, maxToC, maxFromC, minAB, minBC, minCD;
-
-	/* "Coarse pruning */
-	while (true) {
-		int prevSize = travelsAB.size() + travelsBC.size() + travelsCD.size();
-
-		maxToB   = priciestLastFlight(travelsAB);
-		maxFromB = priciestFirstFlight(travelsBC);
-		maxToC   = priciestLastFlight(travelsBC);
-		maxFromC = priciestFirstFlight(travelsCD);
-		minAB = cheapestTravel(travelsAB);
-		minBC = cheapestTravel(travelsBC);
-		minCD = cheapestTravel(travelsCD);
-
-		float maxABToExplore = minAB + 0.3 * maxToB + 0.3 * maxFromB;
-		float maxCDToExplore = minCD + 0.3 * maxToC + 0.3 * maxFromC;
-		float maxBCToExplore = minBC + 0.3 * maxToB + 0.3 * maxFromB + 0.3 * maxToC + 0.3 * maxFromC;
-
-		vector<Travel>::iterator it;
-
-		/* We can use upper_bound here, because computePath sorts travels by increasing totalCost */
-		it = upper_bound(travelsAB.begin(), travelsAB.end(), maxABToExplore);
-		travelsAB.erase(it, travelsAB.end());
-
-		it = upper_bound(travelsBC.begin(), travelsBC.end(), maxBCToExplore);
-		travelsBC.erase(it, travelsBC.end());
-
-		it = upper_bound(travelsCD.begin(), travelsCD.end(), maxCDToExplore);
-		travelsCD.erase(it, travelsCD.end());
-
-		int newSize = travelsAB.size() + travelsBC.size() + travelsCD.size();
-		if (newSize == prevSize)
-			break;
-	}
-
-	/* Do cartezian product, do pruning, find best */
-#pragma omp parallel for schedule(dynamic, 1)
-	for (size_t i = 0; i < travelsAB.size(); i++) {
-		/* To avoid data dependency between threads, we first compute a
-		 * thread-local best, then merge it into the global best in a critical section
-		 */
-		const Travel *localBestTravelAB = NULL, *localBestTravelBC = NULL, *localBestTravelCD = NULL;
-		float localBestCost = INFINITY;
-
-		const Travel &travelAB = travelsAB[i];
-
-		/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest choice */
-		const Flight &lastFlight = *travelAB.flights.back();
-		if (travelAB.totalCost - 0.3 * lastFlight.cost - maxFromB * 0.3 > minAB)
-			continue;
-
-		for (const Travel &travelCD : travelsCD) {
-			/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest choice */
-			const Flight &firstFlight = *travelCD.flights.front();
-			if (travelCD.totalCost - 0.3 * firstFlight.cost - maxToC * 0.3 > minCD)
-				continue;
-
-			for (const Travel &travelBC : travelsBC) {
-				/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest choice */
-				const Flight &lastFlight = *travelBC.flights.back();
-				const Flight &firstFlight = *travelBC.flights.front();
-
-				if (travelBC.totalCost
-					- 0.3 * firstFlight.cost - 0.3 * lastFlight.cost
-					- maxToB * 0.3 - maxFromC > minBC)
-					continue;
-
-				float newCost = computeCostAfterMerger(alliances, travelAB, travelBC, travelCD);
-				if (newCost < localBestCost) {
-					localBestCost = newCost;
-					localBestTravelAB = &travelAB;
-					localBestTravelBC = &travelBC;
-					localBestTravelCD = &travelCD;
-				}
-			}
-
-		}
-		/* Reduce */
-#pragma omp critical
-		if (localBestCost < bestCost) {
-			bestCost = localBestCost;
-			bestTravelAB = localBestTravelAB;
-			bestTravelBC = localBestTravelBC;
-			bestTravelCD = localBestTravelCD;
-		}
-	}
-
-	if (isfinite(bestCost))
-		return mergeTravels(alliances, *bestTravelAB, *bestTravelBC, *bestTravelCD);
-	else {
-		Travel travel = Travel();
-		travel.totalCost = INFINITY;
-		return travel;
-	}
-}
-
-Travel findCheapestAndMerge(const Alliances &alliances, const vector<Travel> &travelsAB, const vector<Travel> &travelsBC)
-{
-	/* This function is very similar to the one above
-	 * one day, they should probabily be merge together, but they have pretty different pruning rules
-	 * so for now we have not bothered studying their merger
-	 */
-	const Travel *bestTravelAB = NULL, *bestTravelBC = NULL;
-	float bestCost = INFINITY;
-
-	/* Compute valid prunings */
-	float maxToB   = priciestLastFlight(travelsAB);
-	float maxFromB = priciestFirstFlight(travelsBC);
-	float minAB = cheapestTravel(travelsAB);
-	float minBC = cheapestTravel(travelsBC);
-
-	/* Do cartezian product, do pruning, find best */
-	for (const Travel &travelAB : travelsAB) {
-		const Flight &lastFlight = *travelAB.flights.back();
-
-		/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest choice */
-		if (travelAB.totalCost - 0.3 * lastFlight.cost - maxFromB * 0.3 > minAB)
-			continue;
-
-		for (const Travel &travelBC : travelsBC) {
-			const Flight &firstFlight = *travelBC.flights.front();
-
-			/* Prune this travel, if, assuming best discounts, it cannot be better than the cheapest choice */
-			if (travelBC.totalCost - 0.3 * firstFlight.cost - maxToB * 0.3 > minBC)
-				continue;
-
-			/* Compute cost after merger */
-			float newCost = computeCostAfterMerger(alliances, travelAB, travelBC);
-			if (newCost < bestCost) {
-				bestCost = newCost;
-				bestTravelAB = &travelAB;
-				bestTravelBC = &travelBC;
-			}
-
-		}
-	}
-
-	if (bestTravelAB)
-		return mergeTravels(alliances, *bestTravelAB, *bestTravelBC);
-	else {
-		Travel travel = Travel();
-		travel.totalCost = INFINITY;
-		return travel;
-	}
-}
 
 Travel workHard(const Alliances& alliances, const Flights& flights, const Parameters& parameters, vector<Travel> &homeToConf, vector<Travel> &confToHome)
 {
@@ -461,191 +56,160 @@ Travel workHard(const Alliances& alliances, const Flights& flights, const Parame
 	float maxToConf   = priciestFlight(flights.landings(parameters.to, parameters.dep_time_min, parameters.dep_time_max));
 	float maxFromConf = priciestFlight(flights.takeoffs(parameters.to, parameters.ar_time_min, parameters.ar_time_max));
 
+	timeMe("start workHard");
 	homeToConf = computePath(
 		alliances, flights, /* description about the world */
 		parameters.from, parameters.to, /* source, destination airport */
 		parameters.dep_time_min, parameters.dep_time_max, /* interval of time during which to fly */
 		parameters.max_layover_time, /* other trip parameters */
 		(maxToConf + maxFromConf) * 0.3 /* pruning parameter */);
+	timeMe("homeToConf");
 	confToHome = computePath(
 		alliances, flights,
 		parameters.to, parameters.from,
 		parameters.ar_time_min, parameters.ar_time_max,
 		parameters.max_layover_time,
 		(maxToConf + maxFromConf) * 0.3 /* pruning parameter */);
+	timeMe("confToHome");
 
 	return findCheapestAndMerge(alliances, homeToConf, confToHome);
 }
 
-struct ABCDTravelParameters {
-	Id a, b, c, d;
-	Time tminAB, tmaxAB, tminBC, tmaxBC, tminCD, tmaxCD;
-	Time maxLayover;
-	const vector<Travel> *aToB; //!< Potentially pre-computed values
-	const vector<Travel> *cToD; //!< Potentially pre-computed values
-};
-typedef tuple<vector<Travel>, vector<Travel>, vector<Travel>> ABCDTravelResult;
-
-ABCDTravelResult computeABCDTravel(const Alliances &alliances, const Flights &flights, const ABCDTravelParameters &p)
-{
-	/* Get most expensive flights from/to vacation (for pruning) */
-	float maxToB   = priciestFlight(flights.landings(p.b, p.tminAB, p.tmaxAB));
-	float maxFromB = priciestFlight(flights.takeoffs(p.b, p.tminBC, p.tmaxBC));
-	float maxToC   = priciestFlight(flights.landings(p.c, p.tminBC, p.tmaxBC));
-	float maxFromC = priciestFlight(flights.takeoffs(p.c, p.tminCD, p.tmaxCD));
-
-	vector<Travel> aToB, bToC, cToD;
-
-	/* A -> B */
-	if (p.aToB == NULL) {
-		aToB = computePath(
-			alliances, flights, /* description about the world */
-			p.a, p.b, /* source, destination airport */
-			p.tminAB, p.tmaxAB, /* interval of time during which to fly */
-			p.maxLayover, /* other trip parameters */
-			(maxToB + maxFromB) * 0.3 /* pruning parameter */);
-	}
-	else {
-		aToB = *p.aToB;
-	}
-
-	/* Update (hopefully reducing) maxB */
-	maxToB = 0;
-	for (const Travel &travel : aToB)
-		maxToB = max(maxToB, travel.flights.back()->cost);
-	
-	/* C -> D */
-	if (p.cToD == NULL) {
-		cToD = computePath(
-			alliances, flights, /* description about the world */
-			p.c, p.d, /* source, destination airport */
-			p.tminCD, p.tmaxCD, /* interval of time during which to fly */
-			p.maxLayover, /* other trip parameters */
-			(maxToC + maxFromC) * 0.3 /* pruning parameter */);
-	}
-	else {
-		cToD = *p.cToD;
-	}
-
-	/* Update (hopefully reducing) maxC */
-	maxFromC = 0;
-	for (const Travel &travel : cToD)
-		maxFromC = max(maxFromC, travel.flights.front()->cost);
-
-	/* B -> C */
-	bToC = computePath(
-		alliances, flights, /* description about the world */
-		p.b, p.c, /* source, destination airport */
-		p.tminBC, p.tmaxBC, /* interval of time during which to fly */
-		p.maxLayover, /* other trip parameters */
-		(maxToB + maxFromB + maxToC + maxFromC) * 0.3 /* pruning parameter */);
-	
-	return ABCDTravelResult(aToB, bToC, cToD);
-}
-
 map<Id, Travel> playHard(const Alliances &alliances, const Flights& flights, Parameters& parameters, const vector<Travel> &homeToConf, const vector<Travel> &confToHome)
 {
-	map<Id, Travel> results;
-	int n = parameters.airports_of_interest.size();
+	set<Id> vacations = set<Id>(parameters.airports_of_interest.begin(),
+		parameters.airports_of_interest.end());
 
-	map<Id, ABCDTravelResult> blobs1, blobs2;
-	map<Id, Travel> bests1, bests2;
+	unordered_map<Id, vector<Travel>>
+		homeToVacations,
+		vacationsToConf,
+		confToVacations,
+		vacationsToHome;
 
-	/* Compute intermediate results */
-#pragma omp parallel
-#pragma omp single
-	for (int i = 0; i < n; i++) {
-		Id vacation = parameters.airports_of_interest[i];
-
-		/*
-		 * The first part compute a travel from home -> vacation -> conference -> home
-		 * We'll use the terminology A -> B -> C -> D and AB BC CD for travels
-		 */
-		ABCDTravelParameters p1;
-
+	/*
+	 * The first part compute a travel from home -> vacation -> conference -> home
+	 * We'll use the terminology A -> B -> C -> D and AB BC CD for travels
+	 */
+	{
 		/* Cities */
-		p1.a = parameters.from;
-		p1.b = vacation;
-		p1.c = parameters.to;
-		p1.d = parameters.from;
+		Id a = parameters.from;
+		set<Id> bs = vacations;
+		Id c = parameters.to;
+		// Id d = parameters.from; /* unused, already computed in workHard */
 
 		/* Compute valid travel times */
-		p1.tminAB = parameters.dep_time_min - parameters.vacation_time_max;
-		p1.tmaxAB = parameters.dep_time_min - parameters.vacation_time_min;
-		p1.tminBC = parameters.dep_time_min;
-		p1.tmaxBC = parameters.dep_time_max;
-		p1.tminCD = parameters.ar_time_min;
-		p1.tmaxCD = parameters.ar_time_max;
-		p1.maxLayover = parameters.max_layover_time;
-
-		/* Add cached values */
-		p1.aToB = NULL;
-		p1.cToD = &confToHome;
-
-#pragma omp task shared(alliances, flights) firstprivate(p1) untied
-		{
-			auto blob1 = computeABCDTravel(alliances, flights, p1);
-#pragma omp critical
-			blobs1[vacation] = blob1;
+		Time tminAB = parameters.dep_time_min - parameters.vacation_time_max;
+		Time tmaxAB = parameters.dep_time_min - parameters.vacation_time_min;
+		Time tminBC = parameters.dep_time_min;
+		Time tmaxBC = parameters.dep_time_max;
+		Time tminCD = parameters.ar_time_min;
+		Time tmaxCD = parameters.ar_time_max;
+		Time maxLayover = parameters.max_layover_time;
+	
+		/* Get most expensive flights from/to vacation and conference(for pruning) */
+		float maxToB   = 0;
+		float maxFromB = 0;
+		for (Id b : bs) {
+			maxToB   = max(maxToB  , priciestFlight(flights.landings(b, tminAB, tmaxAB)));
+			maxFromB = max(maxFromB, priciestFlight(flights.takeoffs(b, tminBC, tmaxBC)));
 		}
 
-		/*
-		 * The second part compute a travel from home -> conference -> vacation -> home
-		 */
-		ABCDTravelParameters p2;
+		float maxToC   = priciestFlight(flights.landings(c, tminBC, tmaxBC));
+		float maxFromC = priciestFlight(flights.takeoffs(c, tminCD, tmaxCD));
 
-		/* Cities */
-		p2.a = parameters.from;
-		p2.b = parameters.to;
-		p2.c = vacation;
-		p2.d = parameters.from;
+#pragma omp task untied shared(alliances, flights, homeToVacations)
+		homeToVacations = std::move(computePath(
+			alliances, flights, /* description about the world */
+			a, bs, /* source, destination airport */
+			tminAB, tmaxAB, /* interval of time during which to fly */
+			maxLayover, /* other trip parameters */
+			(maxToB + maxFromB) * 0.3 /* pruning parameter */));
 
-		/* Compute valid travel times */
-		p2.tminAB = parameters.dep_time_min;
-		p2.tmaxAB = parameters.dep_time_max;
-		p2.tminBC = parameters.ar_time_min;
-		p2.tmaxBC = parameters.ar_time_max;
-		p2.tminCD = parameters.ar_time_max + parameters.vacation_time_min;
-		p2.tmaxCD = parameters.ar_time_max + parameters.vacation_time_max;
-		p2.maxLayover = parameters.max_layover_time;
-
-		/* Add cached values */
-		p2.aToB = &homeToConf;
-		p2.cToD = NULL;
-
-#pragma omp task shared(alliances, flights) firstprivate(p2) untied
-		{
-			auto blob2 = computeABCDTravel(alliances, flights, p2);
-#pragma omp critical
-			blobs2[vacation] = blob2;
-		}
+#pragma omp task untied shared(alliances, flights, vacationsToConf)
+		vacationsToConf = std::move(computePath(
+			alliances, flights, /* description about the world */
+			bs, c, /* source, destination airport */
+			tminBC, tmaxBC, /* interval of time during which to fly */
+			maxLayover, /* other trip parameters */
+			(maxToB + maxFromB + maxToC + maxFromC) * 0.3 /* pruning parameter */));
 	}
-#pragma omp taskwait
+	
+	/*
+	 * The second part compute a travel from home -> conference -> vacation -> home
+	 * We'll use the terminology A -> B -> C -> D and AB BC CD for travels
+	 */
+	{
+		/* Cities */
+		// Id a = parameters.from; /* unused, already computed in workHard */
+		Id b = parameters.to;
+		set<Id> cs = vacations;
+		Id d = parameters.from;
 
+		/* Compute valid travel times */
+		Time tminAB = parameters.dep_time_min;
+		Time tmaxAB = parameters.dep_time_max;
+		Time tminBC = parameters.ar_time_min;
+		Time tmaxBC = parameters.ar_time_max;
+		Time tminCD = parameters.ar_time_max + parameters.vacation_time_min;
+		Time tmaxCD = parameters.ar_time_max + parameters.vacation_time_max;
+		Time maxLayover = parameters.max_layover_time;
+	
+		/* Get most expensive flights from/to vacation and conference(for pruning) */
+		float maxToB   = priciestFlight(flights.landings(b, tminAB, tmaxAB));
+		float maxFromB = priciestFlight(flights.takeoffs(b, tminBC, tmaxBC));
+
+		float maxToC   = 0;
+		float maxFromC = 0;
+		for (Id c : cs) {
+			maxToC   = max(maxToC, priciestFlight(flights.landings(c, tminBC, tmaxBC)));
+			maxFromC = max(maxFromC, priciestFlight(flights.takeoffs(c, tminCD, tmaxCD)));
+		}
+
+#pragma omp task untied shared(alliances, flights, confToVacations)
+		confToVacations = std::move(computePath(
+			alliances, flights, /* description about the world */
+			b, cs, /* source, destination airport */
+			tminBC, tmaxBC, /* interval of time during which to fly */
+			maxLayover, /* other trip parameters */
+			(maxToB + maxFromB + maxToC + maxFromC) * 0.3 /* pruning parameter */));
+
+#pragma omp task untied shared(alliances, flights, vacationsToHome)
+		vacationsToHome = std::move(computePath(
+			alliances, flights, /* description about the world */
+			cs, d, /* source, destination airport */
+			tminCD, tmaxCD, /* interval of time during which to fly */
+			maxLayover, /* other trip parameters */
+			(maxToC + maxFromC) * 0.3 /* pruning parameter */));
+
+	}
+
+#pragma omp taskwait
 	timeMe("computePath");
 
 	/*
 	 * Run time-consuming findCheapest
 	 */
-	for (size_t i = 0; i < parameters.airports_of_interest.size(); i++) {
-		Id vacation = parameters.airports_of_interest[i];
-		auto &thisBlob1 = blobs1[vacation];
-		bests1[vacation] = findCheapestAndMerge(alliances, get<0>(thisBlob1), get<1>(thisBlob1), get<2>(thisBlob1));
-		auto &thisBlob2 = blobs2[vacation];
-		bests2[vacation] = findCheapestAndMerge(alliances, get<0>(thisBlob2), get<1>(thisBlob2), get<2>(thisBlob2));
+	map<Id, Travel> results;
+	for (Id vacation : vacations) {
+		/* Make a copies, since findCheapestAndMerge is destructive */
+		auto copyOfHomeToConf = homeToConf;
+		auto copyOfConfToHome = confToHome;
+
+		auto best1 = findCheapestAndMerge(alliances,
+			homeToVacations[vacation],
+			vacationsToConf[vacation],
+			copyOfConfToHome);
+		auto best2 = findCheapestAndMerge(alliances,
+			copyOfHomeToConf,
+			confToVacations[vacation],
+			vacationsToHome[vacation]);
+
+		if (best1.totalCost > best2.totalCost)
+			results[vacation] = best2;
+		else
+			results[vacation] = best1;
 
 		timeMe("findCheapest");
-	}
-	timeMe("done findCheapest");
-
-	/*
-	 * Reduce results
-	 */
-	for (Id vacation : parameters.airports_of_interest) {
-		if (bests1[vacation].totalCost > bests2[vacation].totalCost)
-			results[vacation] = bests2[vacation];
-		else
-			results[vacation] = bests1[vacation];
 	}
 	timeMe("done");
 
