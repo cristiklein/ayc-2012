@@ -60,7 +60,7 @@ unordered_map<Id, vector<Travel>> computePath(
 		/* Check if we reached any destination */
 		if (to.count(airport)) {
 			finalSegments[airport].push_back(seg);
-			if (finalSegments.size() == to.size()) {
+			if (finalSegments.size() == to.size() && isinf(lastCheapestTravel)) {
 				lastCheapestTravel = seg->totalCost;
 			}
 		}
